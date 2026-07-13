@@ -1,0 +1,6 @@
+ai/venv/
+ai/generated_audio/
+__pycache__/
+*.pyc
+.env
+*.wav
