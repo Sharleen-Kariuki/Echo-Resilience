@@ -97,16 +97,20 @@ model AlertRegion {
 
 // 7. ALERT HISTORY TABLE
 model AlertHistory {
-  id           Int           @id @default(autoincrement())
-  alertId      Int           @map("alert_id")
-  alert        Alert         @relation(fields: [alertId], references: [id], onDelete: Cascade)
-  regionId     Int           @map("region_id")
-  region       Region        @relation(fields: [regionId], references: [id], onDelete: Restrict)
-  dialect      String        @db.VarChar(100)
-  status       String        @default("pending") @db.VarChar(50)
-  callsCount   Int           @default(0) @map("calls_count")
-  dispatchedAt DateTime      @default(now()) @map("dispatched_at") @db.Timestamptz
-  feedbackLogs FeedbackLog[]
+  id             Int           @id @default(autoincrement())
+  alertId        Int           @map("alert_id")
+  alert          Alert         @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  regionId       Int           @map("region_id")
+  region         Region        @relation(fields: [regionId], references: [id], onDelete: Restrict)
+  dialect        String        @db.VarChar(100)
+  status         String        @default("pending") @db.VarChar(50)
+  callsCount     Int           @default(0) @map("calls_count")
+  dispatchedAt   DateTime      @default(now()) @map("dispatched_at") @db.Timestamptz
+  // AI pipeline output — populated by the backend after calling the AI module
+  simplifiedText String?       @map("simplified_text") @db.Text
+  translatedText String?       @map("translated_text") @db.Text
+  audioUrl       String?       @map("audio_url") @db.Text
+  feedbackLogs   FeedbackLog[]
 
   @@index([alertId], map: "idx_alert_history_alert")
   @@map("alert_history")

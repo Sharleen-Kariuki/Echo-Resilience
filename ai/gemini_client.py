@@ -142,3 +142,81 @@ def process_alert(raw_alert: str, target_dialect: str, severity_level: str | Non
     raise AlertProcessingError(
         f"Failed to get valid JSON from Gemini after 3 attempts. Last error: {last_error}"
     )
+
+
+def transcribe_feedback(audio_file_path: str, dialect_hint: str | None = None) -> dict:
+    """
+    Transcribes audio feedback in its native language, translates the transcription to English,
+    and categorises the hazard type. Returns a dict:
+      { "transcription_text": "...", "translated_text": "...", "hazard_type": "..." }
+    """
+    try:
+        import google.generativeai as genai
+    except ImportError as e:
+        raise AlertProcessingError(
+            "google-generativeai not installed. Run: "
+            "pip install google-generativeai --break-system-packages"
+        ) from e
+
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise AlertProcessingError("GEMINI_API_KEY environment variable not set.")
+
+    if not os.path.exists(audio_file_path):
+        raise FileNotFoundError(f"Audio feedback file not found: {audio_file_path}")
+
+    # Determine MIME type
+    mime_type = "audio/wav"
+    ext = audio_file_path.lower().split('.')[-1]
+    if ext == "mp3":
+        mime_type = "audio/mp3"
+    elif ext in ("m4a", "mp4"):
+        mime_type = "audio/m4a"
+    elif ext == "ogg":
+        mime_type = "audio/ogg"
+
+    try:
+        with open(audio_file_path, "rb") as f:
+            audio_bytes = f.read()
+    except Exception as e:
+        raise AlertProcessingError(f"Failed to read audio file: {e}")
+
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(model_name="gemini-2.5-flash")
+
+    system_prompt = (
+        "You are an audio processing agent for EchoResilience. Your task is to transcribe, "
+        "translate, and categorize community feedback audio."
+    )
+
+    prompt = (
+        "You are provided with a community audio recording containing voice feedback. "
+        "Please do the following:\n"
+        "1. Transcribe the audio exactly in the original language spoken.\n"
+        "2. Translate the transcription into English.\n"
+        "3. Categorize the hazard type mentioned or implied (e.g. Flood, Drought, Locust, Extreme Heat, None).\n\n"
+    )
+    if dialect_hint:
+        prompt += f"Note: The speaker is likely speaking in or around the dialect '{dialect_hint}'.\n"
+
+    prompt += (
+        "Output ONLY a valid JSON object in this exact shape:\n"
+        "{\n"
+        "  \"transcription_text\": \"the transcription of the audio in its original language\",\n"
+        "  \"translated_text\": \"the English translation of the transcription\",\n"
+        "  \"hazard_type\": \"Flood | Drought | Locust | Extreme Heat | None\"\n"
+        "}"
+    )
+
+    try:
+        response = model.generate_content(
+            [
+                {"mime_type": mime_type, "data": audio_bytes},
+                prompt
+            ],
+            generation_config={"temperature": 0.2, "response_mime_type": "application/json"},
+        )
+        cleaned = _strip_json_fences(response.text)
+        return json.loads(cleaned)
+    except Exception as e:
+        raise AlertProcessingError(f"Gemini feedback transcription request failed: {e}")

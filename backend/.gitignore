@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Environment variables — never commit the real .env
+.env
+
+# Prisma generated client (re-generated on npm install)
+# Uncomment if you want to gitignore it:
+# node_modules/.prisma/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
