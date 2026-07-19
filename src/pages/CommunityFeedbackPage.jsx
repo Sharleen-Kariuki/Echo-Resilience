@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Bell,
   FileText,
@@ -13,78 +13,55 @@ import {
   Share2,
   Calendar,
   ChevronDown,
+  RefreshCw,
 } from "lucide-react";
 import AppLayout from "../components/layout/AppLayout";
 import TopBar from "../components/layout/TopBar";
 import Card from "../components/ui/Card";
 import Badge, { statusTone } from "../components/ui/Badge";
-
-/* ---------------- data (swap for API later) ---------------- */
-
-const FEEDBACK = [
-  {
-    id: 1,
-    region: "Zinder Plateau",
-    severity: "CRITICAL",
-    icon: Droplet,
-    tone: "red",
-    time: "2 hours ago",
-    dialect: "Hausa Dialect",
-    duration: "0:24",
-    progress: 0.35,
-    transcription: "Ruwa ya kare a rijiya tun makonni biyu da suka wuce...",
-    translation: "The water in our community wells ran dry two weeks ago. Cattle are suffering.",
-    tags: ["drought", "water_security"],
-    action: { label: "Assign Action", icon: CornerUpLeft, tone: "primary" },
-    assignees: ["JD", "AK"],
-  },
-  {
-    id: 2,
-    region: "Lamu Coastal District",
-    severity: "MODERATE",
-    icon: Waves,
-    tone: "green",
-    time: "5 hours ago",
-    dialect: "Swahili",
-    duration: "0:12",
-    progress: 0.15,
-    transcription: "Mvua kubwa imesababisha barabara ya kuelekea soko kufungwa...",
-    translation: "Heavy rain has caused the market access road to be blocked by mud.",
-    tags: [],
-    action: { label: "Mark as Resolved", icon: CheckCircle2, tone: "success" },
-    assignees: [],
-  },
-  {
-    id: 3,
-    region: "Arba Minch",
-    severity: "HIGH",
-    icon: Thermometer,
-    tone: "red",
-    time: "8 hours ago",
-    dialect: "Amharic",
-    duration: "0:45",
-    progress: 0.6,
-    transcription: "መቀቀቱ በጣም እያሸመረ ነው፣ ህጻናት እና አረጋውያን እየታመሙ ነው...",
-    translation: "The heat is increasing rapidly. Children and elderly are falling ill. We need cool zones.",
-    tags: [],
-    action: { label: "Forward to Health Dept", icon: Share2, tone: "primary" },
-    assignees: ["MS"],
-  },
-];
+import { api, mockHazardTypes, mockRegions } from "../lib/api";
 
 const TILE = {
   red: "bg-danger-soft text-danger",
   green: "bg-success-soft text-success",
 };
 
-/* ---------------- local pieces ---------------- */
+function timeAgo(value) {
+  if (!value) return "Recently";
+  const seconds = Math.max(1, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
+  if (seconds < 60) return "Now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
 
-function AudioPlayer({ duration, progress }) {
+function getRegionName(item) {
+  return item.region?.name ?? item.regionName ?? "Community Region";
+}
+
+function getHazardName(item) {
+  return item.hazardType?.name ?? item.hazardTypeName ?? "Climate Risk";
+}
+
+function getSeverity(item) {
+  return item.severity ?? item.severityLevel ?? (getHazardName(item).toLowerCase().includes("flood") ? "Critical" : "High");
+}
+
+function getIcon(item) {
+  const hazard = getHazardName(item).toLowerCase();
+  if (hazard.includes("flood") || hazard.includes("rain")) return Waves;
+  if (hazard.includes("heat")) return Thermometer;
+  return Droplet;
+}
+
+function AudioPlayer({ duration = "0:24", progress = 0.35, src }) {
   const [playing, setPlaying] = useState(false);
   return (
     <div className="flex items-center gap-3 rounded-xl bg-canvas p-3">
       <button
-        onClick={() => setPlaying((p) => !p)}
+        onClick={() => setPlaying((current) => !current)}
         className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-primary text-white"
         aria-label={playing ? "Pause" : "Play"}
       >
@@ -93,7 +70,13 @@ function AudioPlayer({ duration, progress }) {
       <div className="h-1.5 flex-1 rounded-full bg-line">
         <div className="h-full rounded-full bg-primary" style={{ width: `${progress * 100}%` }} />
       </div>
-      <span className="text-sm tabular-nums text-muted">{duration}</span>
+      {src ? (
+        <audio src={src} controls className="h-9 max-w-40">
+          <track kind="captions" />
+        </audio>
+      ) : (
+        <span className="text-sm tabular-nums text-muted">{duration}</span>
+      )}
     </div>
   );
 }
@@ -102,91 +85,100 @@ function AvatarGroup({ people }) {
   const colors = ["bg-primary", "bg-success"];
   return (
     <div className="flex -space-x-2">
-      {people.map((p, i) => (
+      {people.map((person, index) => (
         <span
-          key={p}
-          className={`grid h-7 w-7 place-items-center rounded-full border-2 border-surface text-[11px] font-bold text-white ${colors[i % 2]}`}
+          key={person}
+          className={`grid h-7 w-7 place-items-center rounded-full border-2 border-surface text-[11px] font-bold text-white ${colors[index % 2]}`}
         >
-          {p}
+          {person}
         </span>
       ))}
     </div>
   );
 }
 
-function FeedbackCard({ item }) {
-  const { icon: Icon, action } = item;
+function FeedbackCard({ item, onProcess }) {
+  const Icon = getIcon(item);
+  const severity = getSeverity(item);
+  const isCritical = severity.toLowerCase() === "critical";
+  const action =
+    item.processed || item.status === "processed"
+      ? { label: "Mark as Resolved", icon: CheckCircle2, tone: "success" }
+      : { label: "Process Audio", icon: RefreshCw, tone: "primary" };
   const ActionIcon = action.icon;
   const actionColor = action.tone === "success" ? "text-success" : "text-primary";
+  const assignees = item.assignees ?? (isCritical ? ["JD", "AK"] : []);
+
   return (
     <Card className="flex flex-col overflow-hidden">
-      {/* header */}
       <div className="flex items-start gap-3 p-5">
-        <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${TILE[item.tone]}`}>
+        <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${isCritical ? TILE.red : TILE.green}`}>
           <Icon size={20} />
         </div>
         <div className="min-w-0">
-          <div className="font-bold text-ink">{item.region}</div>
+          <div className="font-bold text-ink">{getRegionName(item)}</div>
           <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted">
-            <Clock size={13} /> {item.time} • {item.dialect}
+            <Clock size={13} /> {timeAgo(item.createdAt)} - {item.dialect ?? item.dialectHint ?? "Local dialect"}
           </div>
         </div>
         <div className="ml-auto">
-          <Badge tone={statusTone(item.severity)}>{item.severity}</Badge>
+          <Badge tone={statusTone(severity)}>{severity.toUpperCase()}</Badge>
         </div>
       </div>
 
-      {/* body */}
       <div className="flex-1 px-5">
-        <AudioPlayer duration={item.duration} progress={item.progress} />
+        <AudioPlayer src={item.audioFeedbackUrl} />
 
         <div className="grid grid-cols-2 gap-4 py-4">
           <div>
             <div className="mb-1.5 text-[11px] font-semibold tracking-wide text-muted">
               AI TRANSCRIPTION
             </div>
-            <p className="text-sm italic leading-relaxed text-ink/70">&ldquo;{item.transcription}&rdquo;</p>
+            <p className="text-sm italic leading-relaxed text-ink/70">
+              &ldquo;{item.transcriptionText ?? item.transcription ?? "Awaiting transcription."}&rdquo;
+            </p>
           </div>
           <div>
             <div className="mb-1.5 text-[11px] font-semibold tracking-wide text-muted">
               ENGLISH TRANSLATION
             </div>
-            <p className="text-sm leading-relaxed text-ink">&ldquo;{item.translation}&rdquo;</p>
+            <p className="text-sm leading-relaxed text-ink">
+              &ldquo;{item.translationText ?? item.translation ?? "No translation available yet."}&rdquo;
+            </p>
           </div>
         </div>
 
-        {item.tags.length > 0 && (
-          <div className="flex flex-wrap gap-2 pb-4">
-            {item.tags.map((t) => (
-              <span key={t} className="rounded-md bg-chip px-2.5 py-1 text-xs font-medium text-chip-ink">
-                #{t}
-              </span>
-            ))}
-          </div>
-        )}
+        <div className="flex flex-wrap gap-2 pb-4">
+          {[getHazardName(item), item.status].filter(Boolean).map((tag) => (
+            <span key={tag} className="rounded-md bg-chip px-2.5 py-1 text-xs font-medium text-chip-ink">
+              #{String(tag).replace(/\s+/g, "_").toLowerCase()}
+            </span>
+          ))}
+        </div>
       </div>
 
-      {/* footer */}
       <div className="mt-auto flex items-center justify-between border-t border-line bg-canvas/60 px-5 py-3">
-        <button className={`flex items-center gap-2 text-sm font-semibold ${actionColor} hover:underline`}>
+        <button
+          onClick={() => onProcess(item)}
+          className={`flex items-center gap-2 text-sm font-semibold ${actionColor} hover:underline`}
+        >
           <ActionIcon size={16} /> {action.label}
         </button>
-        {item.assignees.length > 0 ? (
-          <AvatarGroup people={item.assignees} />
-        ) : (
-          <span className="text-sm italic text-muted">No one assigned</span>
-        )}
+        {assignees.length > 0 ? <AvatarGroup people={assignees} /> : <span className="text-sm italic text-muted">No one assigned</span>}
       </div>
     </Card>
   );
 }
 
-function HotspotCard() {
+function HotspotCard({ feedback }) {
+  const criticalCount = feedback.filter((item) => getSeverity(item).toLowerCase() === "critical").length;
+  const resolvedCount = feedback.filter((item) => String(item.status).toLowerCase() === "resolved").length;
+
   return (
     <Card className="overflow-hidden">
       <div className="p-5">
         <div className="font-display text-lg font-extrabold text-ink">Hotspot Visualization</div>
-        <div className="text-sm text-muted">Real-time feedback clustering</div>
+        <div className="text-sm text-muted">Real-time feedback clustering from /api/feedback</div>
       </div>
       <div
         className="relative mx-5 mb-5 h-72 overflow-hidden rounded-xl border border-line"
@@ -199,13 +191,12 @@ function HotspotCard() {
             "radial-gradient(circle at 25% 30%, rgba(31,122,84,0.20), transparent 26%)",
         }}
       >
-        {/* legend */}
         <div className="absolute bottom-3 right-3 rounded-lg border border-line bg-surface/95 px-3 py-2 text-xs">
           <div className="flex items-center gap-2">
-            <span className="h-2.5 w-2.5 rounded-full bg-primary" /> Critical Reports
+            <span className="h-2.5 w-2.5 rounded-full bg-primary" /> Critical Reports: {criticalCount}
           </div>
           <div className="mt-1.5 flex items-center gap-2">
-            <span className="h-2.5 w-2.5 rounded-full bg-success" /> Resolved Issues
+            <span className="h-2.5 w-2.5 rounded-full bg-success" /> Resolved Issues: {resolvedCount}
           </div>
         </div>
       </div>
@@ -213,38 +204,57 @@ function HotspotCard() {
   );
 }
 
-function FilterBar() {
-  const [severity, setSeverity] = useState("All");
+function FilterBar({ filters, setFilters, regions, hazards }) {
   return (
     <Card className="mb-6 flex flex-wrap items-end gap-5 p-5">
-      <FilterSelect label="Region" options={["All Regions", "Marsabit North", "Laisamis"]} />
-      <FilterSelect label="Hazard Type" options={["All Hazards", "Drought", "Flood", "Heat Wave"]} />
+      <FilterSelect
+        label="Region"
+        value={filters.regionId}
+        onChange={(regionId) => setFilters((current) => ({ ...current, regionId }))}
+        options={[{ id: "", name: "All Regions" }, ...regions]}
+      />
+      <FilterSelect
+        label="Hazard Type"
+        value={filters.hazardTypeId}
+        onChange={(hazardTypeId) => setFilters((current) => ({ ...current, hazardTypeId }))}
+        options={[{ id: "", name: "All Hazards" }, ...hazards]}
+      />
 
       <div>
         <div className="mb-2 text-xs font-semibold tracking-wide text-muted">Severity</div>
         <div className="flex gap-2">
-          {["Critical", "High", "All"].map((s) => (
+          {["Critical", "High", "All"].map((severity) => (
             <button
-              key={s}
-              onClick={() => setSeverity(s)}
+              key={severity}
+              onClick={() => setFilters((current) => ({ ...current, severity }))}
               className={`rounded-lg border px-4 py-2 text-sm font-semibold transition-colors ${
-                severity === s
+                filters.severity === severity
                   ? "border-primary bg-primary text-white"
                   : "border-line bg-surface text-muted hover:text-ink"
               }`}
             >
-              {s}
+              {severity}
             </button>
           ))}
         </div>
       </div>
 
-      <FilterSelect label="Date Range" options={["Last 7 Days", "Last 30 Days", "Today"]} icon={Calendar} />
+      <FilterSelect
+        label="Date Range"
+        value={filters.range}
+        onChange={(range) => setFilters((current) => ({ ...current, range }))}
+        options={[
+          { id: "7", name: "Last 7 Days" },
+          { id: "30", name: "Last 30 Days" },
+          { id: "1", name: "Today" },
+        ]}
+        icon={Calendar}
+      />
     </Card>
   );
 }
 
-function FilterSelect({ label, options, icon: Icon }) {
+function FilterSelect({ label, options, value, onChange, icon: Icon }) {
   return (
     <label className="block min-w-44">
       <span className="mb-2 block text-xs font-semibold tracking-wide text-muted">{label}</span>
@@ -253,12 +263,16 @@ function FilterSelect({ label, options, icon: Icon }) {
           <Icon size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
         )}
         <select
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
           className={`w-full appearance-none rounded-xl border border-line bg-surface py-2.5 pr-9 text-[15px] font-semibold text-ink outline-none focus:border-primary ${
             Icon ? "pl-9" : "pl-4"
           }`}
         >
-          {options.map((o) => (
-            <option key={o}>{o}</option>
+          {options.map((option) => (
+            <option key={option.id} value={option.id}>
+              {option.name}
+            </option>
           ))}
         </select>
         <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted" />
@@ -267,9 +281,78 @@ function FilterSelect({ label, options, icon: Icon }) {
   );
 }
 
-/* ---------------- page ---------------- */
-
 export default function CommunityFeedbackPage() {
+  const [feedback, setFeedback] = useState([]);
+  const [regions, setRegions] = useState(mockRegions);
+  const [hazards, setHazards] = useState(mockHazardTypes);
+  const [filters, setFilters] = useState({ regionId: "", hazardTypeId: "", severity: "All", range: "7" });
+  const [status, setStatus] = useState("Loading feedback...");
+  const [usingMock, setUsingMock] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadLists() {
+      const [regionsResult, hazardsResult] = await Promise.all([api.getRegions(), api.getHazardTypes()]);
+      if (!isMounted) return;
+      setRegions(regionsResult.data.length ? regionsResult.data : mockRegions);
+      setHazards(hazardsResult.data.length ? hazardsResult.data : mockHazardTypes);
+      setUsingMock(regionsResult.usingMock || hazardsResult.usingMock);
+    }
+
+    loadLists();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadFeedback() {
+      setStatus("Refreshing /api/feedback...");
+      const result = await api.getFeedback({
+        regionId: filters.regionId,
+        hazardTypeId: filters.hazardTypeId,
+        page: 1,
+        limit: 20,
+      });
+
+      if (!isMounted) return;
+
+      const filteredData =
+        filters.severity === "All"
+          ? result.data
+          : result.data.filter((item) => getSeverity(item).toLowerCase() === filters.severity.toLowerCase());
+
+      setFeedback(filteredData);
+      setUsingMock((current) => current || result.usingMock);
+      setStatus(result.usingMock ? "Backend unavailable - mock feedback active" : "Feedback synced from API");
+    }
+
+    loadFeedback();
+    return () => {
+      isMounted = false;
+    };
+  }, [filters]);
+
+  async function handleProcess(item) {
+    setStatus(`Processing feedback #${item.id}...`);
+    try {
+      await api.processFeedback(item.id, {
+        audio_local_path: item.audioFeedbackUrl,
+        dialect_hint: item.dialect,
+      });
+      setStatus(`Processed feedback #${item.id} through /api/feedback/:id/process`);
+    } catch (error) {
+      console.error(error);
+      setUsingMock(true);
+      setStatus("Feedback process endpoint failed - existing text retained");
+    }
+  }
+
+  const liveReports = useMemo(() => feedback.length, [feedback]);
+
   const actions = (
     <>
       <button className="rounded-lg p-1.5 text-ink hover:bg-surface" aria-label="Notifications">
@@ -286,30 +369,28 @@ export default function CommunityFeedbackPage() {
       user={{ name: "Admin User", detail: "admin@echoresilience.org", initials: "AU" }}
       topBar={<TopBar searchPlaceholder="Search feedback records..." actions={actions} />}
     >
-      {/* title row */}
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="font-display text-3xl font-extrabold tracking-tight text-primary">
             Community Feedback
           </h1>
           <p className="mt-1 text-muted">
-            Review and manage localized climate reporting from across active regions.
+            {usingMock ? "Mock-assisted records are shown until the backend responds." : status}
           </p>
         </div>
         <span className="inline-flex items-center gap-2 rounded-full bg-success-soft px-4 py-2 text-sm font-semibold text-success">
           <span className="h-2 w-2 rounded-full bg-success" />
-          Live Reports: <span className="font-bold">142 Today</span>
+          Live Reports: <span className="font-bold">{liveReports} Today</span>
         </span>
       </div>
 
-      <FilterBar />
+      <FilterBar filters={filters} setFilters={setFilters} regions={regions} hazards={hazards} />
 
-      {/* cards grid */}
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
-        {FEEDBACK.map((item) => (
-          <FeedbackCard key={item.id} item={item} />
+        {feedback.map((item) => (
+          <FeedbackCard key={item.id} item={item} onProcess={handleProcess} />
         ))}
-        <HotspotCard />
+        <HotspotCard feedback={feedback} />
       </div>
     </AppLayout>
   );
