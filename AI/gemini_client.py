@@ -1,25 +1,34 @@
 """
 gemini_client.py
 
-Calls Gemini for the outbound alert pipeline: simplify + translate + extract.
-Parses and validates the JSON response, retries on rate limits.
+Thin wrapper around the Gemini API for the EchoResilience simplify+translate+
+extract call. Handles:
+  - Calling the model with the prompt from prompt_builder.py
+  - Forcing/parsing JSON output safely (models sometimes wrap JSON in
+    ```json fences even when told not to — we strip that defensively)
+  - Basic validation against the expected schema and SMS length rule
+  - Retrying once on a malformed response before giving up
 
-Setup:
-  pip install google-generativeai --break-system-packages
-  export GEMINI_API_KEY="your-key-here"
+Requires: pip install google-generativeai --break-system-packages
+Set your key: export GEMINI_API_KEY="your-key-here"
 """
 
 import os
 import json
 import re
-import time
 
-from prompt_builder import build_prompt, SUPPORTED_DIALECTS
+from prompt_builder import build_messages, SUPPORTED_AI_DIALECTS
 
 REQUIRED_FIELDS = {
-    "hazard_type", "urgency", "recommended_action",
-    "simplified_en", "translated_text", "target_dialect", "translation_confidence",
+    "hazard_type",
+    "urgency",
+    "recommended_action",
+    "simplified_en",
+    "translated_text",
+    "target_dialect",
+    "translation_confidence",
 }
+
 SMS_CHAR_LIMIT = 300
 
 
@@ -28,84 +37,186 @@ class AlertProcessingError(Exception):
 
 
 def _strip_json_fences(text: str) -> str:
+    """Models sometimes wrap JSON in ```json ... ``` despite instructions not to."""
     text = text.strip()
     text = re.sub(r"^```(json)?", "", text).strip()
     text = re.sub(r"```$", "", text).strip()
     return text
 
 
-def _parse_json_response(text: str) -> dict:
-    """
-    Parses the first complete JSON object out of the model's response, even
-    if there's trailing extra text after it (Gemini occasionally appends
-    stray content despite response_mime_type=application/json). Using
-    raw_decode instead of json.loads avoids failing on that extra data.
-    """
-    cleaned = _strip_json_fences(text)
-    decoder = json.JSONDecoder()
-    obj, _ = decoder.raw_decode(cleaned)
-    return obj
-
-
-def _validate(data: dict) -> list[str]:
+def _validate_response(data: dict) -> list[str]:
+    """Return a list of validation problems (empty list = valid)."""
     problems = []
     missing = REQUIRED_FIELDS - data.keys()
     if missing:
         problems.append(f"Missing fields: {missing}")
+
     if "simplified_en" in data and len(data["simplified_en"]) > SMS_CHAR_LIMIT:
-        problems.append(f"simplified_en exceeds {SMS_CHAR_LIMIT}-char SMS limit")
+        problems.append(
+            f"simplified_en is {len(data['simplified_en'])} chars, "
+            f"exceeds SMS limit of {SMS_CHAR_LIMIT}"
+        )
+
     if "urgency" in data and data["urgency"] not in {"Low", "Moderate", "High", "Critical"}:
-        problems.append(f"Invalid urgency: {data.get('urgency')}")
+        problems.append(f"Invalid urgency value: {data.get('urgency')}")
+
     conf = data.get("translation_confidence")
     if conf is not None and not (0.0 <= float(conf) <= 1.0):
         problems.append(f"translation_confidence out of range: {conf}")
+
     return problems
 
 
-def process_alert(raw_alert: str, target_dialect: str, severity_level: str | None = None,
-                   model: str = "gemini-3.5-flash") -> dict:
+def call_gemini(system_prompt: str, user_prompt: str, model: str = "gemini-2.5-flash") -> str:
     """
-    Full outbound pipeline: build prompt -> call Gemini -> parse -> validate.
-    Retries on malformed JSON or rate limits (429).
+    Calls the Gemini API and returns the raw text response.
+    Isolated into its own function so it's easy to swap models or mock in tests.
     """
-    if target_dialect not in SUPPORTED_DIALECTS:
-        raise ValueError(f"'{target_dialect}' not supported. Choose from: {SUPPORTED_DIALECTS}")
-
     try:
         import google.generativeai as genai
     except ImportError as e:
         raise AlertProcessingError(
-            "google-generativeai not installed. Run: pip install google-generativeai --break-system-packages"
+            "google-generativeai not installed. Run: "
+            "pip install google-generativeai --break-system-packages"
+        ) from e
+
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise AlertProcessingError(
+            "GEMINI_API_KEY environment variable not set. "
+            "Get a key from https://aistudio.google.com/apikey and export it."
+        )
+
+    genai.configure(api_key=api_key)
+    gen_model = genai.GenerativeModel(model_name=model, system_instruction=system_prompt)
+    response = gen_model.generate_content(
+        user_prompt,
+        generation_config={"temperature": 0.3, "response_mime_type": "application/json"},
+    )
+    return response.text
+
+
+def process_alert(raw_alert: str, target_dialect: str, severity_level: str | None = None) -> dict:
+    """
+    Full pipeline: build prompt -> call Gemini -> parse -> validate.
+    Retries once on a malformed/invalid response.
+
+    Returns the parsed dict (matching the schema in prompt_builder.py) plus
+    a "_validation_warnings" key (empty list if clean).
+    """
+    if target_dialect not in SUPPORTED_AI_DIALECTS:
+        raise ValueError(
+            f"'{target_dialect}' isn't in the Gemini pipeline's supported list "
+            f"{SUPPORTED_AI_DIALECTS}. Use turkana_templates.get_turkana_message() "
+            f"for Turkana, or add the dialect to prompt_builder.SUPPORTED_AI_DIALECTS "
+            f"once you've tested translation quality for it."
+        )
+
+    prompt = build_messages(raw_alert, target_dialect, severity_level)
+
+    import time
+
+    last_error = None
+    for attempt in range(3):
+        try:
+            raw_text = call_gemini(prompt["system"], prompt["user"])
+            cleaned = _strip_json_fences(raw_text)
+            data = json.loads(cleaned)
+            problems = _validate_response(data)
+            data["_validation_warnings"] = problems
+            return data
+        except (json.JSONDecodeError, AlertProcessingError) as e:
+            last_error = e
+            continue
+        except Exception as e:
+            # Free-tier rate limit (429 RESOURCE_EXHAUSTED) — back off and retry
+            # rather than crashing the whole pipeline on one throttled call.
+            if "RESOURCE_EXHAUSTED" in str(e) or "429" in str(e):
+                wait_seconds = 20 * (attempt + 1)
+                print(f"  Rate limited, waiting {wait_seconds}s before retry...")
+                time.sleep(wait_seconds)
+                last_error = e
+                continue
+            raise
+
+    raise AlertProcessingError(
+        f"Failed to get valid JSON from Gemini after 3 attempts. Last error: {last_error}"
+    )
+
+
+def transcribe_feedback(audio_file_path: str, dialect_hint: str | None = None) -> dict:
+    """
+    Transcribes audio feedback in its native language, translates the transcription to English,
+    and categorises the hazard type. Returns a dict:
+      { "transcription_text": "...", "translated_text": "...", "hazard_type": "..." }
+    """
+    try:
+        import google.generativeai as genai
+    except ImportError as e:
+        raise AlertProcessingError(
+            "google-generativeai not installed. Run: "
+            "pip install google-generativeai --break-system-packages"
         ) from e
 
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise AlertProcessingError("GEMINI_API_KEY environment variable not set.")
 
+    if not os.path.exists(audio_file_path):
+        raise FileNotFoundError(f"Audio feedback file not found: {audio_file_path}")
+
+    # Determine MIME type
+    mime_type = "audio/wav"
+    ext = audio_file_path.lower().split('.')[-1]
+    if ext == "mp3":
+        mime_type = "audio/mp3"
+    elif ext in ("m4a", "mp4"):
+        mime_type = "audio/m4a"
+    elif ext == "ogg":
+        mime_type = "audio/ogg"
+
+    try:
+        with open(audio_file_path, "rb") as f:
+            audio_bytes = f.read()
+    except Exception as e:
+        raise AlertProcessingError(f"Failed to read audio file: {e}")
+
     genai.configure(api_key=api_key)
-    prompt = build_prompt(raw_alert, target_dialect, severity_level)
-    gen_model = genai.GenerativeModel(model_name=model, system_instruction=prompt["system"])
+    model = genai.GenerativeModel(model_name="gemini-2.5-flash")
 
-    last_error = None
-    for attempt in range(3):
-        try:
-            response = gen_model.generate_content(
-                prompt["user"],
-                generation_config={"temperature": 0.3, "response_mime_type": "application/json"},
-            )
-            data = _parse_json_response(response.text)
-            data["_validation_warnings"] = _validate(data)
-            return data
-        except json.JSONDecodeError as e:
-            last_error = e
-            continue
-        except Exception as e:
-            if "RESOURCE_EXHAUSTED" in str(e) or "429" in str(e):
-                wait = 20 * (attempt + 1)
-                print(f"  Rate limited, waiting {wait}s before retry...")
-                time.sleep(wait)
-                last_error = e
-                continue
-            raise
+    system_prompt = (
+        "You are an audio processing agent for EchoResilience. Your task is to transcribe, "
+        "translate, and categorize community feedback audio."
+    )
 
-    raise AlertProcessingError(f"Failed after 3 attempts. Last error: {last_error}")
+    prompt = (
+        "You are provided with a community audio recording containing voice feedback. "
+        "Please do the following:\n"
+        "1. Transcribe the audio exactly in the original language spoken.\n"
+        "2. Translate the transcription into English.\n"
+        "3. Categorize the hazard type mentioned or implied (e.g. Flood, Drought, Locust, Extreme Heat, None).\n\n"
+    )
+    if dialect_hint:
+        prompt += f"Note: The speaker is likely speaking in or around the dialect '{dialect_hint}'.\n"
+
+    prompt += (
+        "Output ONLY a valid JSON object in this exact shape:\n"
+        "{\n"
+        "  \"transcription_text\": \"the transcription of the audio in its original language\",\n"
+        "  \"translated_text\": \"the English translation of the transcription\",\n"
+        "  \"hazard_type\": \"Flood | Drought | Locust | Extreme Heat | None\"\n"
+        "}"
+    )
+
+    try:
+        response = model.generate_content(
+            [
+                {"mime_type": mime_type, "data": audio_bytes},
+                prompt
+            ],
+            generation_config={"temperature": 0.2, "response_mime_type": "application/json"},
+        )
+        cleaned = _strip_json_fences(response.text)
+        return json.loads(cleaned)
+    except Exception as e:
+        raise AlertProcessingError(f"Gemini feedback transcription request failed: {e}")

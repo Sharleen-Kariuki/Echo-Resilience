@@ -1,106 +1,131 @@
-# EchoResilience AI Module — Simplify / Translate / Voice (v2, clean build)
+# EchoResilience AI Module — Simplify / Translate / Extract
 
-AI/NLP component for the ICPAC alert pipeline. Scope: **Somali and Amharic
-only**, for a focused hackathon demo. Handles both directions:
-
-- **Outbound:** raw alert → simplified → translated → structured data → audio
-- **Inbound:** community feedback call → transcribed → translated → structured data
+This is the AI component for the ICPAC alert pipeline: takes a raw scientific
+alert, simplifies it, translates it into the target community dialect, and
+extracts structured fields (hazard type, urgency, recommended action) — all
+in a single Gemini call, returned as validated JSON ready for FastAPI to
+insert into `alert_history`.
 
 ## Files
 
 | File | Purpose |
 |---|---|
-| `prompt_builder.py` | Prompts for both pipelines (outbound alert + inbound feedback) |
-| `gemini_client.py` | Outbound: simplify + translate + extract |
-| `tts_client.py` | Outbound: translated text → audio file |
-| `stt_client.py` | Inbound: feedback audio → transcript + translation + extraction |
-| `test_pipeline.py` | Test the outbound text pipeline |
-| `test_tts.py` | Test audio generation |
-| `test_feedback_pipeline.py` | Test the inbound pipeline (round-trips through TTS since you don't have real recordings yet) |
+| `prompt_builder.py` | System prompt + few-shot examples that anchor tone, length, and JSON shape |
+| `gemini_client.py` | Calls Gemini, parses/validates JSON, retries once on malformed output |
+| `turkana_templates.py` | Phrase-bank fallback for Turkana (not covered by mainstream MT — see note below) |
+| `test_pipeline.py` | Test harness — run this first |
 
 ## Setup
 
 ```bash
-python -m venv venv
-venv\Scripts\activate          # Windows
 pip install google-generativeai --break-system-packages
-```
-Get a key at https://aistudio.google.com/apikey, then:
-```powershell
-$env:GEMINI_API_KEY="your-key-here"
+export GEMINI_API_KEY="your-key-here"   # get one at https://aistudio.google.com/apikey
 ```
 
-## Run it, in order
+## Run it
 
-```powershell
-python test_pipeline.py --dry-run     # 1. sanity-check code, no key needed
-python test_pipeline.py               # 2. real simplify+translate+extract
-python test_tts.py                    # 3. generate audio, then LISTEN to the files
-python test_feedback_pipeline.py      # 4. test the inbound direction
+```bash
+# Sanity-check the code logic without needing an API key yet:
+python test_pipeline.py --dry-run
+
+# Once you have a key, test real model output quality:
+python test_pipeline.py
 ```
 
-Each live run takes about a minute — there's a 15-second pause between calls
-to stay under the free tier's 5-requests-per-minute limit.
+Read the printed output for each test alert/dialect pair. What to look for:
 
-## What to actually check (not just "does it run")
+- **`simplified_en`** — is it actually simple? Would someone with no science
+  background understand it in one read/listen? Is it under 300 chars?
+- **`translated_text`** — if you have a native speaker on the team (or can
+  reach one), get them to sanity-check a few outputs per dialect. This is
+  the single biggest quality risk in the whole project — LLM translation
+  quality for Somali/Oromo/Amharic varies a lot by domain and phrasing.
+- **`translation_confidence`** — Gemini's own self-rating. Don't fully trust
+  it, but low scores are worth a second look.
+- **`_validation_warnings`** — should be empty. If you see warnings on most
+  outputs, tighten the system prompt in `prompt_builder.py` rather than
+  patching around it in code.
 
-- Open every `.wav` file in `generated_audio/` and listen. Does it sound
-  clear and natural, not robotic or garbled?
-- If you know a Somali or Amharic speaker, show them a few `translated_text`
-  outputs and a couple of audio clips — 5 minutes of their time is worth
-  more than any amount of code review here.
+## Why Turkana is handled differently
 
-## Endpoints for your backend teammate
+Turkana is not covered by NLLB-200 or reliably by general-purpose LLMs — it's
+a low-resource Nilotic language with very little training data available
+anywhere. Rather than let Gemini "translate" into Turkana with no way to
+verify the output, `turkana_templates.py` uses a pre-approved phrase bank:
+Gemini still extracts hazard/urgency/action from English (that part is
+reliable), then we slot-fill a verified Turkana template for that
+hazard+urgency combo. If no template exists, the alert is flagged
+`needs_human_review` and shown in English rather than auto-sent.
 
-| Endpoint | Calls | Purpose |
-|---|---|---|
-| `POST /api/alerts/{id}/process` | `process_alert()` | Simplify + translate + extract from a raw alert |
-| `POST /api/alerts/{id}/generate-audio` | `generate_audio()` | Translated text → playable audio file |
-| `GET /api/alerts/{id}/audio/{dialect}` | — | Serves the audio file — this is what the **IVR teammate** calls |
-| `POST /api/feedback/{id}/process` | `transcribe_feedback()` | Recorded feedback call → transcript + English translation + hazard guess |
-| `GET /api/dialects` | — | Returns `["Somali", "Amharic"]` so the frontend only offers what's actually supported |
+**Before demo day:** the templates in `TURKANA_PHRASE_BANK` are placeholders
+marked `"verified": False` — get an actual Turkana speaker to review/correct
+them, then flip `verified` to `True`. This is honestly a stronger talking
+point for judges than pretending an LLM can translate Turkana — it shows you
+understood the low-resource-language problem rather than glossing over it.
 
-### Example FastAPI wiring
+## The TTS piece — and where your responsibility ends
+
+Your pipeline now goes: **simplify → translate → extract → generate audio file.**
+That last step uses `tts_client.py`, which calls Gemini's native TTS model
+(same API key, no new credentials needed).
+
+```bash
+python test_tts.py   # generates .wav files in generated_audio/, listen to them
+```
+
+**This is the exact handoff boundary with your IVR teammate:**
+
+- **You own:** turning text into a finished, verified audio file.
+- **They own:** dialing the phone, playing whatever audio file you give them
+  (via Africa's Talking's `<Play url="...">` action), handling keypad input,
+  and recording responses.
+- **The interface between you:** a file path or public URL. Nothing else.
+  You never touch their Africa's Talking account/webhooks; they never touch
+  your Gemini key or prompts.
+
+**Do not let your teammate use Africa's Talking's built-in `<Say>` text-to-speech
+for Somali, Oromo, or Turkana.** `<Say>` uses standard Google Cloud TTS voices
+under the hood, and that voice set's coverage of these dialects is unreliable
+to nonexistent — it could silently produce a robotic or wrong-language voice
+during your demo. Generating the audio yourself with `tts_client.py` means
+you control and can verify quality before it ever reaches a phone call.
+
+**For Turkana specifically:** don't use synthetic TTS at all, even if Gemini's
+model technically attempts it. Extend the same "human-verified phrase bank"
+approach you're already using for Turkana text — get a Turkana speaker to
+record real audio for your ~5-10 template phrases, save those as static
+`.wav`/`.mp3` files, and hand those to your teammate directly instead of
+generating anything synthetically. This is both safer and, honestly, sounds
+better than any TTS model would for a low-resource language.
+
+**Once you have working audio files**, the only thing you hand your IVR
+teammate is: a way to fetch the right audio file for a given alert + dialect
+(e.g. a `/api/alert-audio/{alert_id}/{dialect}` endpoint your backend
+teammate exposes, or a shared folder/cloud bucket with predictable filenames).
+You don't need to know anything about how Africa's Talking works to finish
+your part.
+
+## Wiring into FastAPI
+
+
+Your backend teammate's endpoint should call:
 
 ```python
 from gemini_client import process_alert
-from tts_client import generate_audio
-from stt_client import transcribe_feedback
+from turkana_templates import get_turkana_message
 
-@app.post("/api/alerts/{alert_id}/process")
-def process(alert_id: int, dialect: str, raw_text: str, severity: str):
-    result = process_alert(raw_text, dialect, severity)
-    # Save result["simplified_en"], result["translated_text"] to alert_history
-    return result
-
-@app.post("/api/alerts/{alert_id}/generate-audio")
-def audio(alert_id: int, translated_text: str, dialect: str):
-    path = generate_audio(translated_text, dialect, str(alert_id))
-    # Save path/URL to alert_history.audio_url
-    return {"audio_path": path}
-
-@app.post("/api/feedback/{feedback_id}/process")
-def feedback(feedback_id: int, audio_local_path: str, dialect_hint: str = None):
-    result = transcribe_feedback(audio_local_path, dialect_hint)
-    # Save result["translated_text"], result["hazard_type"] to feedback_logs
+@app.post("/api/translate-alert")
+def translate_alert(alert_id: int, region_id: int, dialect: str, raw_text: str, severity: str):
+    if dialect in SUPPORTED_AI_DIALECTS:
+        result = process_alert(raw_text, dialect, severity)
+    else:  # Turkana
+        extraction = process_alert(raw_text, "Somali", severity)  # reuse extraction
+        turkana = get_turkana_message(extraction["hazard_type"], extraction["urgency"], extraction["simplified_en"])
+        result = {**extraction, **turkana}
+    # Save result["simplified_en"], result["translated_text"], etc. to alert_history
     return result
 ```
 
-## Schema notes to raise with your backend teammate
-
-- `alert_history` needs `simplified_text`, `translated_text`, `audio_url` columns.
-- `feedback_logs.hazard_type_id` is `NOT NULL`, but STT can legitimately
-  return `"Unclear"` — make it nullable or add an "Unclear" row to
-  `hazard_types` so inserts don't fail.
-- `feedback_logs` has no `needs_human_review` flag — useful for the Feedback
-  Detail screen to surface low-confidence entries for a person to check.
-
-## Boundary with the IVR teammate
-
-- **You own:** producing a finished audio file, and turning their recorded
-  feedback audio into text.
-- **They own:** dialing numbers, playing whatever audio file you hand them,
-  capturing keypad input, saving the recording and giving you its path.
-- **Don't** let them use Africa's Talking's built-in `<Say>` TTS for Somali
-  or Amharic — its voice coverage is unreliable. Always use your generated
-  audio file instead.
+Flag to your backend teammate: `alert_history` currently has no columns to
+store `simplified_text`, `translated_text`, or `audio_url` — add those
+before this can persist anything.

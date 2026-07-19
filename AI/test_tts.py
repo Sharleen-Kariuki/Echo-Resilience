@@ -1,8 +1,9 @@
 """
 test_tts.py
 
-Generates sample audio for Somali and Amharic. Run this, then actually
-listen to the .wav files in generated_audio/ — that's the real test.
+Test the text-to-speech step on its own, separate from test_pipeline.py,
+so you can iterate on audio quality without re-running the full text
+pipeline each time.
 
 Usage:
   export GEMINI_API_KEY="your-key-here"
@@ -18,9 +19,14 @@ SAMPLE_TEXTS = [
         "alert_id": "test001",
     },
     {
-        "text": "ለሁለት የዝናብ ወቅቶች በጣም ትንሽ ዝናብ ወርዷል። እንስሳትን ወደ ውሃ ምንጮች ቀድመው ያንቀሳቅሱ።",
+        "text": "በማርሳቢት ለሁለት የዝናብ ወቅቶች በጣም ትንሽ ዝናብ ወርዷል። እንስሳትን ወደ ውሃ ምንጮች ቀድመው ያንቀሳቅሱ።",
         "dialect": "Amharic",
         "alert_id": "test002",
+    },
+    {
+        "text": "Makundi ya nzige yanasogea kuelekea mashambani. Ripoti mara moja ukiona nzige.",
+        "dialect": "Swahili",
+        "alert_id": "test003",
     },
 ]
 
@@ -30,7 +36,11 @@ if __name__ == "__main__":
         try:
             path = generate_audio(sample["text"], sample["dialect"], sample["alert_id"])
             print(f"  ✓ Saved to: {path}")
+            print(f"  → Play this file and judge for yourself: does it sound intelligible?")
         except Exception as e:
             print(f"  ✗ Failed: {e}")
 
-    print("\nDone. Open the generated_audio/ folder and listen to each file.")
+    print("\nDone. Listen to each .wav file in the generated_audio/ folder.")
+    print("If a dialect sounds robotic/wrong/unintelligible, don't use Gemini TTS")
+    print("for it — fall back to a human-recorded clip instead (same approach")
+    print("as the Turkana phrase bank).")
