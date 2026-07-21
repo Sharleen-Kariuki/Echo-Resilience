@@ -18,6 +18,11 @@ export function statusTone(status) {
     ONGOING: "neutral",
     MONITORING: "neutral",
     HIGH: "neutral",
+    DELIVERED: "green",
+    DISPATCHED: "green",
+    "IN PROGRESS": "neutral",
+    PENDING: "neutral",
+    FAILED: "red",
   };
   return map[status] ?? "neutral";
 }

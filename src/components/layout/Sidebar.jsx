@@ -1,24 +1,48 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   TriangleAlert,
   MessageSquare,
+  Map,
+  Users,
   BarChart3,
   LogOut,
 } from "lucide-react";
+import { useAuth } from "../../lib/auth";
 
 const NAV = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/alerts", label: "Climate Alerts", icon: TriangleAlert },
   { to: "/feedback", label: "Community Feedback", icon: MessageSquare },
+  { to: "/feedback-map", label: "Feedback Map", icon: Map },
+  { to: "/communities", label: "Communities", icon: Users },
   { to: "/analytics", label: "Analytics", icon: BarChart3 },
 ];
 
-// `user` is a prop because it changes per page in the mockups
-// (Admin User / Admin Portal / John Doe). Same component, different data.
-export default function Sidebar({
-  user = { name: "Admin User", detail: "admin@echo.org", initials: "AU" },
-}) {
+const ROLE_LABELS = { superadmin: "Super Admin", admin: "Admin", viewer: "Viewer" };
+
+function initialsFor(fullName) {
+  const parts = fullName?.trim().split(/\s+/) ?? [];
+  return (parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "") || "AU";
+}
+
+// `user` prop is an optional override; by default the signed-in account
+// (from AuthProvider) drives the name/role/initials shown here.
+export default function Sidebar({ user: userOverride }) {
+  const { user: authUser, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const user = userOverride ?? {
+    name: authUser?.fullName ?? "Admin User",
+    detail: authUser ? (ROLE_LABELS[authUser.role] ?? authUser.role) : "admin@echo.org",
+    initials: authUser ? initialsFor(authUser.fullName).toUpperCase() : "AU",
+  };
+
+  function handleSignOut() {
+    logout();
+    navigate("/login", { replace: true });
+  }
+
   return (
     <aside className="hidden w-70 shrink-0 flex-col border-r border-line bg-sidebar px-5 py-6 md:flex">
       {/* Brand */}
@@ -70,6 +94,7 @@ export default function Sidebar({
           <div className="truncate text-xs text-muted">{user.detail}</div>
         </div>
         <button
+          onClick={handleSignOut}
           className="rounded-lg p-1.5 text-ink hover:bg-canvas focus-visible:outline-2 focus-visible:outline-primary"
           aria-label="Sign out"
         >

@@ -1,4 +1,5 @@
 import { Search, Bell } from "lucide-react";
+import { useAuth } from "../../lib/auth";
 
 // Built as a shell with slots so every page can reuse it:
 //   - `title`            left-side heading (Dashboard shows "Welcome back, Admin")
@@ -7,7 +8,9 @@ import { Search, Bell } from "lucide-react";
 // Other pages will pass their own `actions` (Export Report, region picker, etc.).
 export default function TopBar({
   title,
+  titleExtra,
   searchPlaceholder = "Global search...",
+  showSearch = true,
   actions,
 }) {
   return (
@@ -17,15 +20,18 @@ export default function TopBar({
           {title}
         </h1>
       )}
+      {titleExtra}
 
-      <label className="flex max-w-md flex-1 items-center gap-2.5 rounded-full border border-line bg-surface px-4 py-2.5 text-muted focus-within:border-primary">
-        <Search size={18} />
-        <input
-          className="min-w-0 flex-1 bg-transparent text-[15px] text-ink outline-none placeholder:text-muted"
-          placeholder={searchPlaceholder}
-          aria-label={searchPlaceholder}
-        />
-      </label>
+      {showSearch && (
+        <label className="flex max-w-md flex-1 items-center gap-2.5 rounded-full border border-line bg-surface px-4 py-2.5 text-muted focus-within:border-primary">
+          <Search size={18} />
+          <input
+            className="min-w-0 flex-1 bg-transparent text-[15px] text-ink outline-none placeholder:text-muted"
+            placeholder={searchPlaceholder}
+            aria-label={searchPlaceholder}
+          />
+        </label>
+      )}
 
       <div className="ml-auto flex items-center gap-4">
         {actions ?? <DefaultActions />}
@@ -35,6 +41,13 @@ export default function TopBar({
 }
 
 function DefaultActions() {
+  const { user } = useAuth();
+  const initials = (user?.fullName?.trim().split(/\s+/) ?? [])
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase() || "AU";
+
   return (
     <>
       <button
@@ -46,10 +59,10 @@ function DefaultActions() {
       <div className="h-7 w-px bg-line" />
       <div className="flex items-center gap-2.5">
         <div className="grid h-9 w-9 place-items-center rounded-full bg-primary text-xs font-bold text-white">
-          AP
+          {initials}
         </div>
         <span className="hidden text-[15px] font-semibold sm:inline">
-          Admin Profile
+          {user?.fullName ?? "Admin Profile"}
         </span>
       </div>
     </>

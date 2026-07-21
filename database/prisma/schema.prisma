@@ -32,6 +32,8 @@ model User {
 model Region {
   id           Int            @id @default(autoincrement())
   name         String         @unique @db.VarChar(100)
+  latitude     Float?
+  longitude    Float?
   communities  Community[]
   alertRegions AlertRegion[]
   alertHistory AlertHistory[]
@@ -127,6 +129,9 @@ model FeedbackLog {
   hazardType     HazardType   @relation(fields: [hazardTypeId], references: [id], onDelete: Restrict)
   audioFeedbackUrl String?    @map("audio_feedback_url") @db.Text
   translationText  String?    @map("translation_text") @db.Text
+  status         String       @default("pending") @db.VarChar(50)
+  adminResponse  String?      @map("admin_response") @db.Text
+  respondedAt    DateTime?    @map("responded_at") @db.Timestamptz
   createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz
 
   @@index([alertHistoryId], map: "idx_feedback_logs_history")

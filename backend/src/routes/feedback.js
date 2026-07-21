@@ -121,6 +121,7 @@ router.post('/:id/process', async (req, res) => {
     data: {
       translationText: result.translated_text || result.translation_text,
       hazardTypeId,
+      status: 'processed',
     },
     include: {
       region:     { select: { id: true, name: true } },
@@ -129,6 +130,30 @@ router.post('/:id/process', async (req, res) => {
   });
 
   res.json({ feedbackLog: updatedLog, aiResult: result });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/feedback/:id  (admin only)
+// Used for "Mark as Resolved" (status) and posting an official response.
+// Body: { status?, adminResponse? }
+// ─────────────────────────────────────────────────────────────────────────────
+router.patch('/:id', authenticate, async (req, res) => {
+  const { status, adminResponse } = req.body;
+  const feedbackId = Number(req.params.id);
+
+  const log = await prisma.feedbackLog.update({
+    where: { id: feedbackId },
+    data: {
+      ...(status ? { status } : {}),
+      ...(adminResponse !== undefined ? { adminResponse, respondedAt: new Date() } : {}),
+    },
+    include: {
+      region:     { select: { id: true, name: true } },
+      hazardType: { select: { id: true, name: true } },
+    },
+  });
+
+  res.json(log);
 });
 
 export default router;

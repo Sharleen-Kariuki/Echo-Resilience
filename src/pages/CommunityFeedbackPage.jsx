@@ -45,6 +45,33 @@ function getHazardName(item) {
   return item.hazardType?.name ?? item.hazardTypeName ?? "Climate Risk";
 }
 
+function downloadFeedbackCsv(rows) {
+  const header = ["ID", "Region", "Hazard Type", "Dialect", "Severity", "Status", "Transcription", "Translation", "Date"];
+  const lines = rows.map((row) =>
+    [
+      row.id,
+      getRegionName(row),
+      getHazardName(row),
+      row.dialect ?? row.dialectHint ?? "",
+      getSeverity(row),
+      row.status ?? (row.processed ? "processed" : "pending"),
+      row.transcriptionText ?? row.transcription ?? "",
+      row.translationText ?? row.translation ?? "",
+      new Date(row.createdAt ?? Date.now()).toISOString(),
+    ]
+      .map((value) => `"${String(value).replace(/"/g, '""')}"`)
+      .join(","),
+  );
+  const csv = [header.join(","), ...lines].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `echo-resilience-feedback-report-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 function getSeverity(item) {
   return item.severity ?? item.severityLevel ?? (getHazardName(item).toLowerCase().includes("flood") ? "Critical" : "High");
 }
@@ -97,14 +124,15 @@ function AvatarGroup({ people }) {
   );
 }
 
-function FeedbackCard({ item, onProcess }) {
+function FeedbackCard({ item, onProcess, onResolve, resolving }) {
   const Icon = getIcon(item);
   const severity = getSeverity(item);
   const isCritical = severity.toLowerCase() === "critical";
-  const action =
-    item.processed || item.status === "processed"
-      ? { label: "Mark as Resolved", icon: CheckCircle2, tone: "success" }
-      : { label: "Process Audio", icon: RefreshCw, tone: "primary" };
+  const isResolved = item.status === "resolved";
+  const isProcessed = item.processed || item.status === "processed" || isResolved;
+  const action = isProcessed
+    ? { label: resolving ? "Resolving..." : "Mark as Resolved", icon: CheckCircle2, tone: "success", onClick: () => onResolve(item) }
+    : { label: "Process Audio", icon: RefreshCw, tone: "primary", onClick: () => onProcess(item) };
   const ActionIcon = action.icon;
   const actionColor = action.tone === "success" ? "text-success" : "text-primary";
   const assignees = item.assignees ?? (isCritical ? ["JD", "AK"] : []);
@@ -158,12 +186,19 @@ function FeedbackCard({ item, onProcess }) {
       </div>
 
       <div className="mt-auto flex items-center justify-between border-t border-line bg-canvas/60 px-5 py-3">
-        <button
-          onClick={() => onProcess(item)}
-          className={`flex items-center gap-2 text-sm font-semibold ${actionColor} hover:underline`}
-        >
-          <ActionIcon size={16} /> {action.label}
-        </button>
+        {isResolved ? (
+          <span className="flex items-center gap-2 text-sm font-semibold text-success">
+            <CheckCircle2 size={16} /> Resolved
+          </span>
+        ) : (
+          <button
+            onClick={action.onClick}
+            disabled={resolving}
+            className={`flex items-center gap-2 text-sm font-semibold ${actionColor} hover:underline disabled:cursor-not-allowed disabled:opacity-60`}
+          >
+            <ActionIcon size={16} /> {action.label}
+          </button>
+        )}
         {assignees.length > 0 ? <AvatarGroup people={assignees} /> : <span className="text-sm italic text-muted">No one assigned</span>}
       </div>
     </Card>
@@ -288,6 +323,7 @@ export default function CommunityFeedbackPage() {
   const [filters, setFilters] = useState({ regionId: "", hazardTypeId: "", severity: "All", range: "7" });
   const [status, setStatus] = useState("Loading feedback...");
   const [usingMock, setUsingMock] = useState(false);
+  const [resolvingId, setResolvingId] = useState(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -339,15 +375,34 @@ export default function CommunityFeedbackPage() {
   async function handleProcess(item) {
     setStatus(`Processing feedback #${item.id}...`);
     try {
-      await api.processFeedback(item.id, {
+      const result = await api.processFeedback(item.id, {
         audio_local_path: item.audioFeedbackUrl,
         dialect_hint: item.dialect,
       });
+      const updated = result?.feedbackLog;
+      setFeedback((current) =>
+        current.map((row) => (row.id === item.id ? { ...row, ...updated, status: "processed" } : row)),
+      );
       setStatus(`Processed feedback #${item.id} through /api/feedback/:id/process`);
     } catch (error) {
       console.error(error);
       setUsingMock(true);
-      setStatus("Feedback process endpoint failed - existing text retained");
+      setFeedback((current) => current.map((row) => (row.id === item.id ? { ...row, status: "processed" } : row)));
+      setStatus("Feedback process endpoint failed - marked processed locally");
+    }
+  }
+
+  async function handleResolve(item) {
+    setResolvingId(item.id);
+    try {
+      await api.updateFeedback(item.id, { status: "resolved" });
+      setStatus(`Marked feedback #${item.id} as resolved`);
+    } catch (error) {
+      console.error(error);
+      setStatus("Resolve endpoint unreachable - marked resolved locally");
+    } finally {
+      setFeedback((current) => current.map((row) => (row.id === item.id ? { ...row, status: "resolved" } : row)));
+      setResolvingId(null);
     }
   }
 
@@ -358,7 +413,10 @@ export default function CommunityFeedbackPage() {
       <button className="rounded-lg p-1.5 text-ink hover:bg-surface" aria-label="Notifications">
         <Bell size={20} />
       </button>
-      <button className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 font-semibold text-white hover:brightness-110">
+      <button
+        onClick={() => downloadFeedbackCsv(feedback)}
+        className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 font-semibold text-white hover:brightness-110"
+      >
         <FileText size={18} /> Export Report
       </button>
     </>
@@ -366,7 +424,6 @@ export default function CommunityFeedbackPage() {
 
   return (
     <AppLayout
-      user={{ name: "Admin User", detail: "admin@echoresilience.org", initials: "AU" }}
       topBar={<TopBar searchPlaceholder="Search feedback records..." actions={actions} />}
     >
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
@@ -388,7 +445,13 @@ export default function CommunityFeedbackPage() {
 
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
         {feedback.map((item) => (
-          <FeedbackCard key={item.id} item={item} onProcess={handleProcess} />
+          <FeedbackCard
+            key={item.id}
+            item={item}
+            onProcess={handleProcess}
+            onResolve={handleResolve}
+            resolving={resolvingId === item.id}
+          />
         ))}
         <HotspotCard feedback={feedback} />
       </div>

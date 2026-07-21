@@ -1,26 +1,33 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { AuthProvider } from "./lib/auth";
+import RequireAuth from "./components/auth/RequireAuth";
+import LoginPage from "./pages/LoginPage";
+import RegisterPage from "./pages/RegisterPage";
 import DashboardPage from "./pages/DashboardPage";
+import AlertHistoryPage from "./pages/AlertHistoryPage";
 import ClimateAlertsPage from "./pages/ClimateAlertsPage";
 import CommunityFeedbackPage from "./pages/CommunityFeedbackPage";
-
-// Placeholder for pages we haven't built yet, so the sidebar links still work.
-function ComingSoon({ title }) {
-  return (
-    <div className="grid min-h-screen place-items-center bg-canvas text-muted">
-      {title} — coming soon
-    </div>
-  );
-}
+import FeedbackMapPage from "./pages/FeedbackMapPage";
+import CommunitiesPage from "./pages/CommunitiesPage";
+import AnalyticsPage from "./pages/AnalyticsPage";
 
 export default function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<DashboardPage />} />
-        <Route path="/alerts" element={<ClimateAlertsPage />} />
-        <Route path="/feedback" element={<CommunityFeedbackPage />} />
-        <Route path="/analytics" element={<ComingSoon title="Analytics" />} />
-      </Routes>
+      <AuthProvider>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+
+          <Route path="/" element={<RequireAuth><DashboardPage /></RequireAuth>} />
+          <Route path="/alerts" element={<RequireAuth><AlertHistoryPage /></RequireAuth>} />
+          <Route path="/alerts/new" element={<RequireAuth><ClimateAlertsPage /></RequireAuth>} />
+          <Route path="/feedback" element={<RequireAuth><CommunityFeedbackPage /></RequireAuth>} />
+          <Route path="/feedback-map" element={<RequireAuth><FeedbackMapPage /></RequireAuth>} />
+          <Route path="/communities" element={<RequireAuth><CommunitiesPage /></RequireAuth>} />
+          <Route path="/analytics" element={<RequireAuth><AnalyticsPage /></RequireAuth>} />
+        </Routes>
+      </AuthProvider>
     </BrowserRouter>
   );
 }

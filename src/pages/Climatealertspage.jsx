@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Megaphone,
   Bell,
@@ -10,12 +11,14 @@ import {
   History,
   Send,
   ChevronDown,
+  ChevronLeft,
   MessageSquare,
   Volume2,
 } from "lucide-react";
 import Sidebar from "../components/layout/Sidebar";
 import Card from "../components/ui/Card";
 import Badge from "../components/ui/Badge";
+import Modal from "../components/ui/Modal";
 import { api, mockDialects, mockHazardTypes, mockRegions } from "../lib/api";
 
 const DEFAULT_DESCRIPTION =
@@ -61,6 +64,64 @@ function getResultText(payload, keys) {
   return "";
 }
 
+function AddHazardTypeModal({ open, onClose, onCreated }) {
+  const [name, setName] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    if (!name.trim()) {
+      setError("Hazard type name is required.");
+      return;
+    }
+    setSubmitting(true);
+    setError("");
+    try {
+      await onCreated(name.trim());
+      setName("");
+      onClose();
+    } catch (err) {
+      console.error(err);
+      setError("Could not save this hazard type to the backend. It has been added locally instead.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Add Hazard Type" description="New hazard types become available immediately in the dropdown above.">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-semibold tracking-wide text-muted">HAZARD TYPE NAME</span>
+          <input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            className="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-primary"
+            placeholder="e.g. Wildfire"
+            autoFocus
+          />
+        </label>
+
+        {error && <p className="text-sm text-danger">{error}</p>}
+
+        <div className="flex justify-end gap-3 pt-2">
+          <button type="button" onClick={onClose} className="rounded-xl border border-line px-5 py-2.5 text-sm font-semibold text-muted hover:text-ink">
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={submitting}
+            className="rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-60"
+          >
+            {submitting ? "Saving..." : "Add Hazard Type"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 export default function ClimateAlertsPage() {
   const [hazardTypes, setHazardTypes] = useState(mockHazardTypes);
   const [allRegions, setAllRegions] = useState(mockRegions);
@@ -76,6 +137,7 @@ export default function ClimateAlertsPage() {
   const [status, setStatus] = useState("Loading API options...");
   const [usingMock, setUsingMock] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [hazardModalOpen, setHazardModalOpen] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -143,6 +205,34 @@ export default function ClimateAlertsPage() {
     const alertId = created.id ?? created.alert?.id ?? created.data?.id;
     setCurrentAlertId(alertId);
     return alertId;
+  }
+
+  async function handleCreateHazardType(name) {
+    try {
+      const created = await api.createHazardType({ name });
+      setHazardTypes((current) => [...current, created]);
+      setHazardTypeId(String(created.id));
+    } catch (error) {
+      const fallback = { id: `local-${Date.now()}`, name };
+      setHazardTypes((current) => [...current, fallback]);
+      setHazardTypeId(String(fallback.id));
+      throw error;
+    }
+  }
+
+  async function handleSaveDraft() {
+    setIsSubmitting(true);
+    setStatus("Saving draft...");
+    try {
+      const alertId = await ensureAlert();
+      setStatus(`Draft saved as AL-${String(alertId).padStart(4, "0")} via /api/alerts`);
+    } catch (error) {
+      console.error(error);
+      setUsingMock(true);
+      setStatus("Create-alert endpoint failed - draft kept locally only");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   async function handleProcess() {
@@ -218,10 +308,17 @@ export default function ClimateAlertsPage() {
 
   return (
     <div className="flex min-h-screen bg-canvas text-ink">
-      <Sidebar user={{ name: "Admin User", detail: "Regional Lead", initials: "AU" }} />
+      <Sidebar />
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center gap-3 border-b border-line px-8 py-5">
+          <Link
+            to="/alerts"
+            className="flex items-center gap-1.5 text-sm font-semibold text-muted hover:text-primary"
+          >
+            <ChevronLeft size={18} /> Alert History
+          </Link>
+          <div className="h-6 w-px bg-line" />
           <Megaphone size={22} className="text-primary" />
           <h1 className="font-display text-2xl font-extrabold text-ink">
             Create New Resilience Alert
@@ -247,14 +344,26 @@ export default function ClimateAlertsPage() {
               </h2>
 
               <div className="mb-5 grid grid-cols-2 gap-4">
-                <Select
-                  label="HAZARD TYPE"
-                  value={hazardTypeId}
-                  onChange={setHazardTypeId}
-                  options={hazardTypes}
-                  getValue={(hazard) => hazard.id}
-                  getLabel={(hazard) => hazard.name}
-                />
+                <div className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <Select
+                      label="HAZARD TYPE"
+                      value={hazardTypeId}
+                      onChange={setHazardTypeId}
+                      options={hazardTypes}
+                      getValue={(hazard) => hazard.id}
+                      getLabel={(hazard) => hazard.name}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setHazardModalOpen(true)}
+                    className="grid h-11.5 w-11.5 shrink-0 place-items-center rounded-xl border border-primary text-primary hover:bg-primary-soft/40"
+                    aria-label="Add hazard type"
+                  >
+                    <Plus size={18} />
+                  </button>
+                </div>
                 <Select
                   label="SEVERITY LEVEL"
                   value={severity}
@@ -389,8 +498,12 @@ export default function ClimateAlertsPage() {
             {status}
           </div>
           <div className="flex gap-3">
-            <button className="rounded-xl border border-primary bg-surface px-6 py-3 font-semibold text-primary hover:bg-primary-soft/40">
-              {selectedHazard?.name ?? "Alert"} Draft
+            <button
+              onClick={handleSaveDraft}
+              disabled={isSubmitting || !description}
+              className="rounded-xl border border-primary bg-surface px-6 py-3 font-semibold text-primary hover:bg-primary-soft/40 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Save {selectedHazard?.name ?? "Alert"} Draft
             </button>
             <button
               onClick={handleDispatch}
@@ -402,6 +515,12 @@ export default function ClimateAlertsPage() {
           </div>
         </footer>
       </div>
+
+      <AddHazardTypeModal
+        open={hazardModalOpen}
+        onClose={() => setHazardModalOpen(false)}
+        onCreated={handleCreateHazardType}
+      />
     </div>
   );
 }
