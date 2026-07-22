@@ -15,12 +15,12 @@ export default function Modal({ open, onClose, title, description, children }) {
       >
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
-            <h2 className="font-display text-xl font-extrabold text-ink">{title}</h2>
+            <h2 className="font-display text-xl font-medium text-ink">{title}</h2>
             {description && <p className="mt-1 text-sm text-muted">{description}</p>}
           </div>
           <button
             onClick={onClose}
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-muted hover:bg-canvas hover:text-ink"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-muted hover:bg-canvas hover:text-ink"
             aria-label="Close"
           >
             <X size={18} />

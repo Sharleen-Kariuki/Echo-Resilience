@@ -73,12 +73,12 @@ function KpiTile({ icon: Icon, label, value, caption }) {
   return (
     <Card className="p-5">
       <div className="mb-3 flex items-center gap-2.5">
-        <div className="grid h-10 w-10 place-items-center rounded-xl bg-primary-soft text-primary">
+        <div className="grid h-10 w-10 place-items-center rounded-md bg-primary-soft text-primary">
           <Icon size={18} strokeWidth={2} />
         </div>
       </div>
       <div className="text-xs font-semibold tracking-wide text-muted">{label}</div>
-      <div className="font-display text-2xl font-extrabold text-ink">{value}</div>
+      <div className="font-display text-2xl font-bold text-ink">{value}</div>
       {caption && <div className="mt-1 text-xs text-muted">{caption}</div>}
     </Card>
   );
@@ -259,7 +259,7 @@ export default function AnalyticsPage() {
       setRegions(regionsResult.data.length ? regionsResult.data : mockRegions);
       const anyMock = historyResult.usingMock || regionsResult.usingMock;
       setUsingMock(anyMock);
-      setStatus(anyMock ? "Backend unavailable - mock analytics active" : "Synced from /api/alert-history");
+      setStatus(anyMock ? "Showing sample data" : "Up to date");
     }
 
     load();
@@ -329,7 +329,7 @@ export default function AnalyticsPage() {
   const actions = (
     <button
       onClick={() => downloadCsv(history)}
-      className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 font-semibold text-white hover:brightness-110"
+      className="flex items-center gap-2 rounded-md bg-primary px-5 py-2.5 font-semibold text-white hover:brightness-110"
     >
       <Download size={18} /> Export Report
     </button>
@@ -340,7 +340,7 @@ export default function AnalyticsPage() {
       topBar={<TopBar title="Analytics & Reports" showSearch={false} actions={actions} />}
     >
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiTile icon={TriangleAlert} label="ALERTS DISPATCHED" value={kpis.totalAlerts.toLocaleString()} caption="From /api/alert-history" />
+        <KpiTile icon={TriangleAlert} label="ALERTS DISPATCHED" value={kpis.totalAlerts.toLocaleString()} caption="All recorded alerts" />
         <KpiTile icon={Phone} label="LIVES REACHED" value={formatCompact(kpis.totalCalls)} caption="Total calls placed" />
         <KpiTile icon={MessageCircle} label="FEEDBACK RECEIVED" value={formatCompact(kpis.totalFeedback)} caption="Community responses" />
         <KpiTile icon={MapPin} label="REGIONS REACHED" value={kpis.regionsReached} caption={`Of ${regions.length} total regions`} />
@@ -348,25 +348,25 @@ export default function AnalyticsPage() {
 
       <div className="mb-5 grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
         <Card className="p-6">
-          <h2 className="mb-5 font-display text-lg font-extrabold text-ink">Alerts by Hazard Type</h2>
+          <h2 className="mb-5 font-display text-lg font-bold text-ink">Alerts by Hazard Type</h2>
           <BarList data={hazardBars} />
         </Card>
 
         <Card className="p-6">
-          <h2 className="mb-5 font-display text-lg font-extrabold text-ink">Alert Status Breakdown</h2>
+          <h2 className="mb-5 font-display text-lg font-bold text-ink">Alert Status Breakdown</h2>
           <StatusBreakdown counts={statusCounts} />
         </Card>
       </div>
 
       <div className="mb-5 grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
         <Card className="p-6">
-          <h2 className="mb-1 font-display text-lg font-extrabold text-ink">Calls Dispatched Trend</h2>
+          <h2 className="mb-1 font-display text-lg font-bold text-ink">Calls Dispatched Trend</h2>
           <p className="mb-4 text-xs text-muted">Hover the line for exact values</p>
           <TrendArea data={trends.calls} color="var(--color-primary)" />
         </Card>
 
         <Card className="p-6">
-          <h2 className="mb-1 font-display text-lg font-extrabold text-ink">Feedback Received Trend</h2>
+          <h2 className="mb-1 font-display text-lg font-bold text-ink">Feedback Received Trend</h2>
           <p className="mb-4 text-xs text-muted">Hover the line for exact values</p>
           <TrendArea data={trends.feedback} color="var(--color-success)" />
         </Card>
@@ -374,14 +374,14 @@ export default function AnalyticsPage() {
 
       <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
         <Card className="p-6">
-          <h2 className="mb-5 flex items-center gap-2 font-display text-lg font-extrabold text-ink">
+          <h2 className="mb-5 flex items-center gap-2 font-display text-lg font-bold text-ink">
             <MapPin size={18} className="text-primary" /> Top Regions by Reach
           </h2>
           <BarList data={regionBars} />
         </Card>
 
         <Card className="p-6">
-          <h2 className="mb-5 flex items-center gap-2 font-display text-lg font-extrabold text-ink">
+          <h2 className="mb-5 flex items-center gap-2 font-display text-lg font-bold text-ink">
             <Languages size={18} className="text-primary" /> Dialect Reach
           </h2>
           <BarList data={dialectBars} formatValue={(value) => `${value} alert${value === 1 ? "" : "s"}`} />

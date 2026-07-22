@@ -26,7 +26,14 @@ function callPythonBridge(payload) {
 
     const proc = spawn(pythonCmd, ['api_bridge.py'], {
       cwd: AI_DIR,
-      env: { ...process.env }, // Pass GEMINI_API_KEY and any other env vars through
+      env: {
+        ...process.env, // Pass GEMINI_API_KEY and any other env vars through
+        // Windows defaults a piped subprocess's stdout/stderr to the console
+        // codepage (cp1252), which can't encode non-Latin scripts like
+        // Amharic — force real UTF-8 so translated text doesn't crash on write.
+        PYTHONIOENCODING: 'utf-8',
+        PYTHONUTF8: '1',
+      },
     });
 
     let stdout = '';

@@ -173,14 +173,17 @@ router.post('/:id/dispatch', authenticate, requireAdmin, async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/alerts/:id/process  (admin only)
-// Simplify + translate + extract from a raw alert (no audio generation)
-// Body: { regionId, dialect }
+// Simplify + translate + extract from a raw alert, for preview purposes only.
+// This is a dry run — nothing is written to alert_history here. A history
+// record (and the community's audit trail) is only created once the alert
+// is actually dispatched via POST /:id/dispatch.
+// Body: { dialect }
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/:id/process', authenticate, requireAdmin, async (req, res) => {
-  const { regionId, dialect } = req.body;
+  const { dialect } = req.body;
 
-  if (!regionId || !dialect) {
-    return res.status(400).json({ error: 'regionId and dialect are required' });
+  if (!dialect) {
+    return res.status(400).json({ error: 'dialect is required' });
   }
 
   const alert = await prisma.alert.findUnique({
@@ -188,105 +191,53 @@ router.post('/:id/process', authenticate, requireAdmin, async (req, res) => {
   });
   if (!alert) return res.status(404).json({ error: 'Alert not found' });
 
-  let historyRecord = await prisma.alertHistory.create({
-    data: {
-      alertId:  alert.id,
-      regionId: Number(regionId),
-      dialect,
-      status:   'processing',
-    },
+  const aiResult = await processAlert({
+    raw_alert:      alert.rawScientificDescription,
+    target_dialect: dialect,
+    severity_level: alert.severityLevel,
   });
 
-  try {
-    const aiResult = await processAlert({
-      raw_alert:      alert.rawScientificDescription,
-      target_dialect: dialect,
-      severity_level: alert.severityLevel,
-    });
-
-    historyRecord = await prisma.alertHistory.update({
-      where: { id: historyRecord.id },
-      data: {
-        status:        'processed',
-        simplifiedText: aiResult.simplified_en,
-        translatedText: aiResult.translated_text ?? aiResult.translatedText,
-      },
-      include: { region: { select: { id: true, name: true } } },
-    });
-
-    res.json({ historyRecord, aiResult });
-  } catch (err) {
-    await prisma.alertHistory.update({
-      where: { id: historyRecord.id },
-      data:  { status: 'failed' },
-    });
-    throw err;
-  }
+  res.json({
+    simplifiedText:   aiResult.simplified_en,
+    translatedText:   aiResult.translated_text ?? aiResult.translatedText,
+    needsHumanReview: aiResult.needs_human_review ?? false,
+    aiResult,
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/alerts/:id/generate-audio  (admin only)
-// Translated text → playable audio file
-// Body: { regionId, dialect }
+// Translated text → playable audio file, for preview purposes only. Takes the
+// translated text straight from the request body (the admin's most recent
+// simplify/translate preview) instead of reading it back from a persisted
+// record — nothing is written to alert_history here, same as /:id/process.
+// Body: { dialect, translatedText }
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/:id/generate-audio', authenticate, requireAdmin, async (req, res) => {
-  const { regionId, dialect } = req.body;
+  const { dialect, translatedText } = req.body;
 
-  if (!regionId || !dialect) {
-    return res.status(400).json({ error: 'regionId and dialect are required' });
+  if (!dialect || !translatedText) {
+    return res.status(400).json({
+      error: 'dialect and translatedText are required. Run the simplify/translate step first.',
+    });
   }
 
-  // Find the processed record
-  let historyRecord = await prisma.alertHistory.findFirst({
-    where: {
-      alertId:  Number(req.params.id),
-      regionId: Number(regionId),
-      dialect,
-      status:   'processed',
-    },
-    orderBy: { dispatchedAt: 'desc' },
+  const audioResult = await generateAudio({
+    alert_result: { target_dialect: dialect, translated_text: translatedText },
+    alert_id:     `${req.params.id}_preview_${Date.now()}`,
   });
 
-  if (!historyRecord || !historyRecord.translatedText) {
-    return res.status(400).json({
-      error: 'No processed alert text found. Please run the simplify/translate process step first.',
-    });
+  let audioUrl = null;
+  if (audioResult.audio_path) {
+    const filename = audioResult.audio_path.replace(/\\/g, '/').split('/').pop();
+    audioUrl = `/audio/${filename}`;
   }
 
-  try {
-    const aiResult = {
-      target_dialect:  historyRecord.dialect,
-      translated_text: historyRecord.translatedText,
-    };
-
-    const audioResult = await generateAudio({
-      alert_result: aiResult,
-      alert_id:     `${req.params.id}_${historyRecord.id}`,
-    });
-
-    let audioUrl = null;
-    if (audioResult.audio_path) {
-      const filename = audioResult.audio_path.replace(/\\/g, '/').split('/').pop();
-      audioUrl = `/audio/${filename}`;
-    }
-
-    historyRecord = await prisma.alertHistory.update({
-      where: { id: historyRecord.id },
-      data: {
-        status:   'dispatched',
-        audioUrl,
-      },
-      include: { region: { select: { id: true, name: true } } },
-    });
-
-    res.json({ historyRecord, audioResult });
-  } catch (err) {
-    await prisma.alertHistory.update({
-      where: { id: historyRecord.id },
-      data:  { status: 'failed' },
-    });
-    throw err;
+  if (!audioUrl) {
+    return res.status(502).json({ error: audioResult.audio_note || 'Audio generation did not return a file.' });
   }
+
+  res.json({ audioUrl, audioResult });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

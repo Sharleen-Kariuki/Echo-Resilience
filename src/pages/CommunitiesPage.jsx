@@ -38,7 +38,7 @@ function FilterSelect({ value, onChange, options }) {
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="w-full appearance-none rounded-xl border border-line bg-surface py-2.5 pl-4 pr-9 text-sm font-semibold text-ink outline-none focus:border-primary"
+        className="w-full appearance-none rounded-md border border-line bg-surface py-2.5 pl-4 pr-9 text-sm font-semibold text-ink outline-none focus:border-primary"
       >
         {options.map((option) => (
           <option key={option.id} value={option.id}>
@@ -61,7 +61,7 @@ function Field({ label, children }) {
 }
 
 const inputClass =
-  "w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-primary";
+  "w-full rounded-md border border-line bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-primary";
 
 function StatusDonut({ active, optedOut }) {
   const total = Math.max(1, active + optedOut);
@@ -188,13 +188,13 @@ function AddCommunityModal({ open, onClose, regions, onCreated }) {
         {error && <p className="text-sm text-danger">{error}</p>}
 
         <div className="flex justify-end gap-3 pt-2">
-          <button type="button" onClick={onClose} className="rounded-xl border border-line px-5 py-2.5 text-sm font-semibold text-muted hover:text-ink">
+          <button type="button" onClick={onClose} className="rounded-md border border-line px-5 py-2.5 text-sm font-semibold text-muted hover:text-ink">
             Cancel
           </button>
           <button
             type="submit"
             disabled={submitting}
-            className="rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-60"
+            className="rounded-md bg-primary px-5 py-2.5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-60"
           >
             {submitting ? "Saving..." : "Add Community"}
           </button>
@@ -256,13 +256,13 @@ function AddRegionModal({ open, onClose, onCreated }) {
         {error && <p className="text-sm text-danger">{error}</p>}
 
         <div className="flex justify-end gap-3 pt-2">
-          <button type="button" onClick={onClose} className="rounded-xl border border-line px-5 py-2.5 text-sm font-semibold text-muted hover:text-ink">
+          <button type="button" onClick={onClose} className="rounded-md border border-line px-5 py-2.5 text-sm font-semibold text-muted hover:text-ink">
             Cancel
           </button>
           <button
             type="submit"
             disabled={submitting}
-            className="rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-60"
+            className="rounded-md bg-primary px-5 py-2.5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-60"
           >
             {submitting ? "Saving..." : "Add Region"}
           </button>
@@ -292,7 +292,7 @@ export default function CommunitiesPage() {
     setRegions(regionsResult.data.length ? regionsResult.data : mockRegions);
     const anyMock = communitiesResult.usingMock || regionsResult.usingMock;
     setUsingMock(anyMock);
-    setLoadStatus(anyMock ? "Backend unavailable - mock community data active" : "Synced from /api/communities");
+    setLoadStatus(anyMock ? "Showing sample data" : "Up to date");
   }
 
   useEffect(() => {
@@ -387,7 +387,7 @@ export default function CommunitiesPage() {
   const actions = (
     <button
       onClick={() => setCommunityModalOpen(true)}
-      className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 font-semibold text-white hover:brightness-110"
+      className="flex items-center gap-2 rounded-md bg-primary px-5 py-2.5 font-semibold text-white hover:brightness-110"
     >
       <Plus size={18} /> Add Community
     </button>
@@ -401,7 +401,7 @@ export default function CommunitiesPage() {
         <p className="text-muted">Management of registered community members and regional coverage.</p>
         <button
           onClick={() => setRegionModalOpen(true)}
-          className="flex items-center gap-2 rounded-xl border border-primary px-5 py-2.5 text-sm font-semibold text-primary hover:bg-primary-soft/40"
+          className="flex items-center gap-2 rounded-md border border-primary px-5 py-2.5 text-sm font-semibold text-primary hover:bg-primary-soft/40"
         >
           <Plus size={16} /> Add Region
         </button>
@@ -412,13 +412,13 @@ export default function CommunitiesPage() {
           <div className="mb-3 flex items-center gap-2 text-xs font-bold tracking-wide text-muted">
             <Users size={16} className="text-primary" /> TOTAL REGISTERED
           </div>
-          <div className="font-display text-3xl font-extrabold text-primary">{stats.totalRegistered.toLocaleString()}</div>
+          <div className="font-display text-3xl font-bold text-primary">{stats.totalRegistered.toLocaleString()}</div>
         </Card>
         <Card className="p-5">
           <div className="mb-3 flex items-center gap-2 text-xs font-bold tracking-wide text-muted">
             <MapPin size={16} className="text-success" /> REGIONS COVERED
           </div>
-          <div className="font-display text-3xl font-extrabold text-ink">{stats.regionsCovered}</div>
+          <div className="font-display text-3xl font-bold text-ink">{stats.regionsCovered}</div>
           <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-canvas">
             <div className="h-full rounded-full bg-success" style={{ width: `${Math.min(100, stats.regionsCovered * 4)}%` }} />
           </div>
@@ -432,7 +432,7 @@ export default function CommunitiesPage() {
       </div>
 
       <Card className="mb-5 flex flex-wrap items-center gap-3 p-4">
-        <label className="flex min-w-56 flex-1 items-center gap-2.5 rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-muted focus-within:border-primary">
+        <label className="flex min-w-56 flex-1 items-center gap-2.5 rounded-md border border-line bg-canvas px-3.5 py-2.5 text-muted focus-within:border-primary">
           <Search size={16} />
           <input
             value={search}

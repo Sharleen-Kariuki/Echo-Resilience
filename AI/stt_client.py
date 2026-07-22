@@ -70,23 +70,22 @@ def transcribe_feedback(audio_path: str, dialect_hint: str | None = None,
     validation fails or confidence is low.
     """
     try:
-        import google.generativeai as genai
+        from google import genai
+        from google.genai import types
     except ImportError as e:
         raise FeedbackProcessingError(
-            "google-generativeai not installed. Run: pip install google-generativeai --break-system-packages"
+            "google-genai not installed. Run: pip install google-genai --break-system-packages"
         ) from e
 
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise FeedbackProcessingError("GEMINI_API_KEY environment variable not set.")
 
-    genai.configure(api_key=api_key)
+    client = genai.Client(api_key=api_key)
 
-    # Read the audio file directly and send it inline in the request rather
-    # than using genai.upload_file() — that function relies on a separate
-    # "Files API" discovery endpoint that's unreliable in the now-deprecated
-    # google.generativeai package. Sending audio inline avoids it entirely
-    # and works fine for short feedback clips (well under the ~20MB inline limit).
+    # Read the audio file directly and send it inline in the request. Short
+    # feedback clips are well under the ~20MB inline limit, so there's no
+    # need for the separate Files API upload path.
     with open(audio_path, "rb") as f:
         audio_bytes = f.read()
 
@@ -100,10 +99,17 @@ def transcribe_feedback(audio_path: str, dialect_hint: str | None = None,
     last_error = None
     for attempt in range(3):
         try:
-            gen_model = genai.GenerativeModel(model_name=model, system_instruction=FEEDBACK_SYSTEM_PROMPT)
-            response = gen_model.generate_content(
-                [user_prompt, {"mime_type": "audio/wav", "data": audio_bytes}],
-                generation_config={"temperature": 0.2, "response_mime_type": "application/json"},
+            response = client.models.generate_content(
+                model=model,
+                contents=[
+                    user_prompt,
+                    types.Part.from_bytes(data=audio_bytes, mime_type="audio/wav"),
+                ],
+                config=types.GenerateContentConfig(
+                    system_instruction=FEEDBACK_SYSTEM_PROMPT,
+                    temperature=0.2,
+                    response_mime_type="application/json",
+                ),
             )
             data = _parse_json_response(response.text)
             problems = _validate(data)

@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  TriangleAlert,
-  Phone,
-  MessageCircle,
-  MapPin,
   AlertOctagon,
   MessagesSquare,
   Send,
   Trash2,
+  ArrowRight,
+  ArrowUpRight,
+  TriangleAlert,
 } from "lucide-react";
 import AppLayout from "../components/layout/AppLayout";
 import TopBar from "../components/layout/TopBar";
@@ -17,18 +16,12 @@ import Badge, { statusTone } from "../components/ui/Badge";
 import Modal from "../components/ui/Modal";
 import { api } from "../lib/api";
 
-const TONES = {
-  red: { tile: "bg-danger-soft text-danger", caption: "text-primary", fill: "bg-primary" },
-  green: { tile: "bg-success-soft text-success", caption: "text-success", fill: "bg-success" },
-  neutral: { tile: "bg-chip text-chip-ink", caption: "text-chip-ink", fill: "bg-chip-ink" },
-};
-
-const COLS = "grid grid-cols-[0.9fr_1fr_1.1fr_1fr_0.8fr_0.5fr] gap-3 items-center";
+const COLS = "grid grid-cols-[0.85fr_1fr_1fr_0.9fr_0.7fr_2.5rem] gap-3 items-center";
 
 function timeAgo(value) {
-  if (!value) return "Recently";
+  if (!value) return "Just now";
   const seconds = Math.max(1, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
-  if (seconds < 60) return "Now";
+  if (seconds < 60) return "Just now";
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m ago`;
   const hours = Math.floor(minutes / 60);
@@ -36,8 +29,15 @@ function timeAgo(value) {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+function todayLabel() {
+  const date = new Date();
+  const weekday = date.toLocaleDateString("en-US", { weekday: "long" });
+  const month = date.toLocaleDateString("en-US", { month: "long" });
+  return `${weekday.toUpperCase()} ${date.getDate()} ${month.toUpperCase()}`;
+}
+
 function getHazardName(alert) {
-  return alert.hazardType?.name ?? alert.hazardTypeName ?? alert.type ?? "Climate Alert";
+  return alert.hazardType?.name ?? alert.hazardTypeName ?? alert.type ?? "Climate alert";
 }
 
 function getAlertRegions(alert) {
@@ -47,7 +47,7 @@ function getAlertRegions(alert) {
 }
 
 function getRegionName(item) {
-  return item.region?.name ?? item.regions?.[0]?.name ?? item.regionName ?? "Regional";
+  return item.region?.name ?? item.regions?.[0]?.name ?? item.regionName ?? "Unassigned";
 }
 
 function buildStats(alerts, feedback, regions, history) {
@@ -56,122 +56,114 @@ function buildStats(alerts, feedback, regions, history) {
     return !["resolved", "closed", "complete"].includes(status);
   }).length;
 
+  const unanswered = feedback.filter((item) => !item.adminResponse).length;
+
   return [
     {
-      icon: TriangleAlert,
-      tone: "red",
-      caption: "From /api/alerts",
-      label: "Active Alerts",
+      label: "Active alerts",
       value: String(activeAlerts),
-      progress: Math.min(1, activeAlerts / 20),
+      detail: activeAlerts === 1 ? "Needs review" : activeAlerts ? "Need attention" : "All clear",
+      valueTone: activeAlerts > 0 ? "text-clay" : "text-ink",
     },
     {
-      icon: Phone,
-      tone: "red",
-      caption: "From /api/alert-history",
-      label: "Calls Sent Today",
+      label: "Calls dispatched",
       value: history.length.toLocaleString(),
-      progress: Math.min(1, history.length / 30),
+      detail: "Today",
     },
     {
-      icon: MessageCircle,
-      tone: "green",
-      caption: "From /api/feedback",
-      label: "Feedback Received",
+      label: "Community reports",
       value: feedback.length.toLocaleString(),
-      unit: "new",
-      progress: Math.min(1, feedback.length / 25),
+      detail: unanswered ? `${unanswered} unread` : "All caught up",
     },
     {
-      icon: MapPin,
-      tone: "neutral",
-      caption: "From /api/regions",
-      label: "Regions Covered",
+      label: "Regions monitored",
       value: regions.length.toLocaleString(),
-      unit: "districts",
-      progress: Math.min(1, regions.length / 25),
+      detail: regions.length === 1 ? "District" : "Districts",
     },
   ];
 }
 
-function StatCard({ icon: Icon, tone, caption, label, value, unit, progress }) {
-  const t = TONES[tone];
+function StatCard({ label, value, detail, valueTone = "text-ink" }) {
   return (
-    <Card className="p-4">
-      <div className="mb-3 flex items-start justify-between gap-2">
-        <div className={`grid h-11 w-11 place-items-center rounded-xl ${t.tile}`}>
-          <Icon size={20} strokeWidth={2} />
-        </div>
-        <span className={`max-w-24 text-right text-xs font-bold leading-tight ${t.caption}`}>
-          {caption}
-        </span>
-      </div>
-      <div className="text-sm font-semibold text-ink">{label}</div>
-      <div className="mb-2.5 font-display text-3xl font-extrabold tracking-tight text-primary">
+    <Card className="p-5">
+      <div className="text-xs font-semibold uppercase tracking-wide text-muted">{label}</div>
+      <div className={`mt-2 font-display text-[2rem] font-semibold leading-none tracking-tight ${valueTone}`}>
         {value}
-        {unit && <span className="ml-1.5 text-sm font-semibold text-muted">{unit}</span>}
       </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-canvas">
-        <div className={`h-full rounded-full ${t.fill}`} style={{ width: `${progress * 100}%` }} />
-      </div>
+      <div className="mt-1.5 text-xs text-muted">{detail}</div>
     </Card>
   );
 }
 
 function RecentAlertsTable({ alerts, onViewAll, onSelect, onDelete, deletingId }) {
   return (
-    <Card className="flex min-h-0 flex-col p-5">
-      <div className="mb-1 flex items-center justify-between">
-        <h2 className="flex items-center gap-2.5 font-display text-lg font-extrabold text-ink">
-          <AlertOctagon size={20} className="text-primary" />
-          Recent Alerts
-        </h2>
-        <button onClick={onViewAll} className="text-sm font-bold text-primary hover:underline">
-          View All
+    <Card className="flex min-h-0 flex-col overflow-hidden">
+      <div className="flex items-center justify-between border-b border-line px-5 py-4">
+        <div>
+          <h2 className="flex items-center gap-2 font-display text-lg font-semibold text-ink">
+            <AlertOctagon size={17} className="text-clay" strokeWidth={2.25} />
+            Recent alerts
+          </h2>
+          <p className="mt-0.5 text-xs text-muted">Latest dispatches across all regions</p>
+        </div>
+        <button
+          onClick={onViewAll}
+          className="flex items-center gap-1 text-sm font-medium text-primary hover:text-primary-glow"
+        >
+          View all
+          <ArrowRight size={14} />
         </button>
       </div>
 
-      <div className={`${COLS} border-b border-line px-2 py-2.5 text-xs font-semibold text-muted`}>
-        <span>Alert ID</span>
-        <span>Type</span>
+      <div className={`${COLS} border-b border-line/70 bg-canvas/50 px-5 py-2.5 text-xs font-medium text-muted`}>
+        <span>ID</span>
+        <span>Hazard</span>
         <span>Region</span>
         <span>Status</span>
-        <span>Time</span>
+        <span>Age</span>
         <span />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {alerts.map((alert) => (
-          <div
-            key={alert.id}
-            onClick={() => onSelect(alert.id)}
-            className={`${COLS} cursor-pointer border-b border-line px-2 py-3 text-sm last:border-none hover:bg-canvas/60`}
-          >
-            <span className="font-bold text-primary">AL-{String(alert.id).padStart(4, "0")}</span>
-            <span>{getHazardName(alert)}</span>
-            <span>{getRegionName(alert)}</span>
-            <span>
-              <Badge tone={statusTone(alert.status ?? alert.severityLevel)}>
-                {alert.status ?? alert.severityLevel ?? "Active"}
-              </Badge>
-            </span>
-            <span className="text-xs text-muted">{timeAgo(alert.createdAt ?? alert.updatedAt)}</span>
-            <span>
-              <button
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onDelete(alert.id);
-                }}
-                disabled={deletingId === alert.id}
-                className="rounded-lg p-1.5 text-muted hover:bg-danger-soft hover:text-danger disabled:opacity-50"
-                aria-label={`Delete alert AL-${String(alert.id).padStart(4, "0")}`}
+      {alerts.length === 0 ? (
+        <div className="flex flex-1 items-center justify-center py-16">
+          <p className="text-sm text-muted">No alerts recorded yet.</p>
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {alerts.map((alert) => (
+              <div
+                key={alert.id}
+                onClick={() => onSelect(alert.id)}
+                className={`${COLS} cursor-pointer border-b border-line/60 px-5 py-3 text-sm transition-colors last:border-none hover:bg-primary-soft/25`}
               >
-                <Trash2 size={15} />
-              </button>
-            </span>
-          </div>
-        ))}
-      </div>
+                <span className="font-mono text-xs font-medium text-ink/80">
+                  AL-{String(alert.id).padStart(4, "0")}
+                </span>
+                <span className="font-medium text-ink">{getHazardName(alert)}</span>
+                <span className="text-muted">{getRegionName(alert)}</span>
+                <span>
+                  <Badge tone={statusTone(alert.status ?? alert.severityLevel)}>
+                    {alert.status ?? alert.severityLevel ?? "Active"}
+                  </Badge>
+                </span>
+                <span className="text-xs text-muted">{timeAgo(alert.createdAt ?? alert.updatedAt)}</span>
+                <span>
+                  <button
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onDelete(alert.id);
+                    }}
+                    disabled={deletingId === alert.id}
+                    className="rounded-md p-1.5 text-muted transition-colors hover:bg-danger-soft hover:text-danger disabled:opacity-50"
+                    aria-label={`Delete alert AL-${String(alert.id).padStart(4, "0")}`}
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </span>
+              </div>
+            ))}
+        </div>
+      )}
     </Card>
   );
 }
@@ -191,9 +183,7 @@ function AlertDetailModal({ alertId, onClose }) {
       .then((result) => {
         if (isMounted) setDetail(result);
       })
-      .catch(() => {
-        // Endpoint unreachable — leave detail null, the modal shows a fallback message.
-      })
+      .catch(() => {})
       .finally(() => {
         if (isMounted) setLoading(false);
       });
@@ -212,10 +202,10 @@ function AlertDetailModal({ alertId, onClose }) {
       title={detail ? getHazardName(detail) : `Alert AL-${String(alertId).padStart(4, "0")}`}
       description={detail ? `AL-${String(detail.id).padStart(4, "0")} · ${getRegionName(detail)}` : undefined}
     >
-      {loading && <p className="text-sm text-muted">Loading from /api/alerts/{alertId}...</p>}
+      {loading && <p className="text-sm text-muted">Loading alert details…</p>}
 
       {!loading && !detail && (
-        <p className="text-sm text-muted">Could not load this alert from the backend.</p>
+        <p className="text-sm text-muted">Couldn&apos;t load this alert. Try again in a moment.</p>
       )}
 
       {detail && (
@@ -228,19 +218,24 @@ function AlertDetailModal({ alertId, onClose }) {
           </div>
 
           <div>
-            <div className="mb-1 text-xs font-semibold tracking-wide text-muted">RAW SCIENTIFIC DESCRIPTION</div>
+            <div className="mb-1.5 text-xs font-medium text-muted">Scientific description</div>
             <p className="text-sm leading-relaxed text-ink">{detail.rawScientificDescription ?? "—"}</p>
           </div>
 
           <div>
-            <div className="mb-1 text-xs font-semibold tracking-wide text-muted">AFFECTED REGIONS</div>
+            <div className="mb-1.5 text-xs font-medium text-muted">Affected regions</div>
             <div className="flex flex-wrap gap-1.5">
               {getAlertRegions(detail).map((region) => (
-                <span key={region.id} className="rounded-md bg-chip px-2 py-0.5 text-[11px] font-bold tracking-wide text-chip-ink">
+                <span
+                  key={region.id}
+                  className="border border-line bg-chip px-2.5 py-0.5 text-xs font-medium text-chip-ink"
+                >
                   {region.name}
                 </span>
               ))}
-              {!getAlertRegions(detail).length && <span className="text-sm text-muted">No regions recorded.</span>}
+              {!getAlertRegions(detail).length && (
+                <span className="text-sm text-muted">No regions recorded.</span>
+              )}
             </div>
           </div>
         </div>
@@ -250,14 +245,20 @@ function AlertDetailModal({ alertId, onClose }) {
 }
 
 function Tag({ label }) {
-  const tone =
-    String(label).toUpperCase() === "URGENT" || String(label).toLowerCase() === "critical"
-      ? "bg-danger-soft text-danger"
-      : "bg-chip text-chip-ink";
-  return <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold tracking-wide ${tone}`}>{label}</span>;
+  const urgent =
+    String(label).toUpperCase() === "URGENT" || String(label).toLowerCase() === "critical";
+  return (
+    <span
+      className={`border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${
+        urgent ? "border-danger/30 bg-danger-soft text-danger" : "border-line bg-chip text-chip-ink"
+      }`}
+    >
+      {label}
+    </span>
+  );
 }
 
-function LiveFeedbackPanel({ feedback, onRespond, sendingId }) {
+function LiveFeedbackPanel({ feedback, onRespond, sendingId, onOpenInbox }) {
   const [message, setMessage] = useState("");
   const [selectedId, setSelectedId] = useState(null);
   const activeId = selectedId ?? feedback[0]?.id ?? null;
@@ -269,65 +270,81 @@ function LiveFeedbackPanel({ feedback, onRespond, sendingId }) {
   }
 
   return (
-    <Card className="flex min-h-0 flex-col p-5">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="flex items-center gap-2.5 font-display text-lg font-extrabold text-ink">
-          <MessagesSquare size={20} className="text-success" />
-          Live Feedback
-        </h2>
-        <span className="h-2.5 w-2.5 rounded-full bg-success shadow-[0_0_0_4px_var(--color-success-soft)]" />
-      </div>
-
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto">
-        {feedback.map((item) => (
-          <button
-            key={item.id}
-            onClick={() => setSelectedId(item.id)}
-            className={`w-full rounded-xl p-3.5 text-left ${
-              item.id === activeId
-                ? "bg-primary-soft/40 shadow-[inset_4px_0_0_var(--color-success)]"
-                : "border border-line hover:border-primary/40"
-            }`}
-          >
-            <div className="mb-1.5 flex items-baseline justify-between">
-              <span className="text-sm font-bold">Feedback #{item.id}</span>
-              <span className="text-[11px] text-muted">{timeAgo(item.createdAt)}</span>
-            </div>
-            <p className="mb-2 text-sm italic leading-snug text-ink/80">
-              &ldquo;{item.translationText ?? item.quote ?? "Community feedback received."}&rdquo;
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {((item.tags ?? [getRegionName(item), item.severity]).filter(Boolean)).map((tag) => (
-                <Tag key={tag} label={tag} />
-              ))}
-            </div>
-            {item.adminResponse && (
-              <p className="mt-2 rounded-lg bg-success-soft/60 px-2.5 py-1.5 text-xs text-success">
-                <span className="font-bold">Official response:</span> {item.adminResponse}
-              </p>
-            )}
-          </button>
-        ))}
-      </div>
-
-      <div className="mt-3 flex items-center gap-2 rounded-xl border border-line py-1 pl-3 pr-1">
-        <input
-          value={message}
-          onChange={(event) => setMessage(event.target.value)}
-          onKeyDown={(event) => event.key === "Enter" && handleSend()}
-          className="min-w-0 flex-1 bg-transparent py-1.5 text-sm outline-none placeholder:text-muted"
-          placeholder={activeId ? `Reply to Feedback #${activeId}...` : "Post official response..."}
-          aria-label="Post official response"
-          disabled={!activeId}
-        />
+    <Card className="flex min-h-0 flex-col overflow-hidden">
+      <div className="flex items-center justify-between border-b border-line px-5 py-4">
+        <div>
+          <h2 className="flex items-center gap-2 font-display text-lg font-semibold text-ink">
+            <MessagesSquare size={17} className="text-success" strokeWidth={2.25} />
+            Community feedback
+          </h2>
+          <p className="mt-0.5 text-xs text-muted">Incoming field reports</p>
+        </div>
         <button
-          onClick={handleSend}
-          disabled={!activeId || !message.trim() || sendingId === activeId}
-          className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-primary text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
-          aria-label="Send response"
+          onClick={onOpenInbox}
+          className="flex items-center gap-1 text-sm font-medium text-primary hover:text-primary-glow"
         >
-          <Send size={16} />
+          Open inbox
         </button>
+      </div>
+
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+        {feedback.length === 0 ? (
+          <div className="flex h-full items-center justify-center py-12">
+            <p className="text-sm text-muted">No feedback received yet.</p>
+          </div>
+        ) : (
+          feedback.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => setSelectedId(item.id)}
+              className={`w-full rounded-lg p-3.5 text-left transition-all ${
+                item.id === activeId
+                  ? "bg-accent-soft/60 ring-1 ring-accent/30"
+                  : "hover:bg-canvas/80"
+              }`}
+            >
+              <div className="mb-1.5 flex items-baseline justify-between gap-2">
+                <span className="text-sm font-semibold text-ink">{getRegionName(item)}</span>
+                <span className="shrink-0 text-[11px] text-muted">{timeAgo(item.createdAt)}</span>
+              </div>
+              <p className="mb-2 line-clamp-2 text-sm leading-relaxed text-ink/85">
+                {item.translationText ?? item.quote ?? "Community feedback received."}
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {((item.tags ?? [item.severity]).filter(Boolean)).map((tag) => (
+                  <Tag key={tag} label={tag} />
+                ))}
+              </div>
+              {item.adminResponse && (
+                <p className="mt-2.5 rounded-md bg-success-soft/70 px-2.5 py-2 text-xs leading-relaxed text-success">
+                  <span className="font-semibold">You replied:</span> {item.adminResponse}
+                </p>
+              )}
+            </button>
+          ))
+        )}
+      </div>
+
+      <div className="border-t border-line p-3">
+        <div className="flex items-center gap-2 rounded-lg border border-line bg-canvas/50 py-1 pl-3 pr-1 focus-within:border-accent/50 focus-within:ring-2 focus-within:ring-accent/15">
+          <input
+            value={message}
+            onChange={(event) => setMessage(event.target.value)}
+            onKeyDown={(event) => event.key === "Enter" && handleSend()}
+            className="min-w-0 flex-1 bg-transparent py-2 text-sm outline-none placeholder:text-muted disabled:cursor-not-allowed"
+            placeholder="Write an official response…"
+            aria-label="Reply to community feedback"
+            disabled={!activeId}
+          />
+          <button
+            onClick={handleSend}
+            disabled={!activeId || !message.trim() || sendingId === activeId}
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-accent text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+            aria-label="Send reply"
+          >
+            <Send size={15} />
+          </button>
+        </div>
       </div>
     </Card>
   );
@@ -390,6 +407,9 @@ export default function DashboardPage() {
   const [selectedAlertId, setSelectedAlertId] = useState(null);
   const [deletingAlertId, setDeletingAlertId] = useState(null);
 
+  const activeCount = stats[0]?.value ?? "0";
+  const hasActiveAlerts = Number(activeCount) > 0;
+
   async function handleDeleteAlert(id) {
     const label = `AL-${String(id).padStart(4, "0")}`;
     if (!window.confirm(`Delete alert ${label}? This can't be undone.`)) return;
@@ -425,23 +445,48 @@ export default function DashboardPage() {
     }
   }
 
+  const headerActions = (
+    <>
+      <button
+        onClick={() => navigate("/alerts")}
+        className={`flex items-center gap-2 border bg-surface px-3.5 py-1.5 text-sm font-medium ${
+          hasActiveAlerts ? "border-clay text-clay hover:bg-clay-soft" : "border-line text-chip-ink hover:bg-canvas"
+        }`}
+      >
+        {hasActiveAlerts && <TriangleAlert size={14} strokeWidth={2.5} />}
+        {hasActiveAlerts ? `${activeCount} active alert${activeCount === "1" ? "" : "s"}` : "Systems normal"}
+      </button>
+      <button
+        onClick={() => navigate("/alerts/new")}
+        className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
+      >
+        New alert
+        <ArrowUpRight size={15} strokeWidth={2.5} />
+      </button>
+    </>
+  );
+
   return (
     <AppLayout
       fitViewport
       topBar={
         <TopBar
-          title={dashboardData.usingMock ? "Welcome back, Admin - mock data active" : "Welcome back, Admin"}
+          eyebrow={todayLabel()}
+          title="Operations overview"
+          subtitle={dashboardData.usingMock ? "Preview mode — sample data loaded" : undefined}
+          showSearch={false}
+          actions={headerActions}
         />
       }
     >
-      <div className="flex h-full min-h-0 flex-col gap-4">
+      <div className="flex h-full min-h-0 flex-col gap-5">
         <section className="grid shrink-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {stats.map((stat) => (
             <StatCard key={stat.label} {...stat} />
           ))}
         </section>
 
-        <section className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]">
+        <section className="grid min-h-0 flex-1 grid-cols-1 gap-5 lg:grid-cols-[1.6fr_1fr]">
           <RecentAlertsTable
             alerts={dashboardData.alerts}
             onViewAll={() => navigate("/alerts")}
@@ -449,7 +494,12 @@ export default function DashboardPage() {
             onDelete={handleDeleteAlert}
             deletingId={deletingAlertId}
           />
-          <LiveFeedbackPanel feedback={dashboardData.feedback} onRespond={handleRespond} sendingId={sendingId} />
+          <LiveFeedbackPanel
+            feedback={dashboardData.feedback}
+            onRespond={handleRespond}
+            sendingId={sendingId}
+            onOpenInbox={() => navigate("/feedback")}
+          />
         </section>
       </div>
 

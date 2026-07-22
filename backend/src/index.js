@@ -38,7 +38,7 @@ app.use(express.json());
 
 // Serve TTS-generated .wav audio files so the IVR team can fetch them
 // Files are written to ai/generated_audio/ by tts_client.py
-const GENERATED_AUDIO_DIR = path.resolve(__dirname, '../../../ai/generated_audio');
+const GENERATED_AUDIO_DIR = path.resolve(__dirname, '../../ai/generated_audio');
 app.use('/audio', express.static(GENERATED_AUDIO_DIR));
 
 // ─── Routes ───────────────────────────────────────────────────────────────────

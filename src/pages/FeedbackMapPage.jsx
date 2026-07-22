@@ -91,7 +91,7 @@ function FilterSelect({ value, onChange, options, icon: Icon }) {
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className={`w-full appearance-none rounded-xl border border-line bg-surface py-2.5 pr-9 text-sm font-semibold text-ink outline-none focus:border-primary ${
+        className={`w-full appearance-none rounded-md border border-line bg-surface py-2.5 pr-9 text-sm font-semibold text-ink outline-none focus:border-primary ${
           Icon ? "pl-9" : "pl-4"
         }`}
       >
@@ -135,7 +135,7 @@ function FeedbackLogItem({ item, onViewDetails }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <div className={`rounded-xl border p-4 ${isUrgent ? "border-danger/40 bg-danger-soft/30" : "border-line"}`}>
+    <div className={`rounded-md border p-4 ${isUrgent ? "border-danger/40 bg-danger-soft/30" : "border-line"}`}>
       <div className="mb-1.5 flex items-start justify-between gap-2">
         <span className="font-bold text-ink">{getRegionName(item)}</span>
         <div className="flex items-center gap-2">
@@ -220,7 +220,7 @@ export default function FeedbackMapPage() {
       setFeedback(feedbackResult.data.length ? feedbackResult.data : mockFeedback);
       const anyMock = hazardsResult.usingMock || regionsResult.usingMock || feedbackResult.usingMock;
       setUsingMock(anyMock);
-      setStatus(anyMock ? "Backend unavailable - mock feedback map active" : "Synced from /api/feedback");
+      setStatus(anyMock ? "Showing sample data" : "Up to date");
     }
 
     load();
@@ -260,8 +260,12 @@ export default function FeedbackMapPage() {
           title="Feedback Map"
           showSearch={false}
           titleExtra={
-            <span className="rounded-full bg-primary-soft px-3 py-1 text-xs font-bold tracking-wide text-primary">
-              LIVE DATA
+            <span
+              className={`border px-3 py-1 text-xs font-bold tracking-wide ${
+                usingMock ? "border-line bg-chip text-chip-ink" : "border-primary/30 bg-primary-soft text-primary"
+              }`}
+            >
+              {usingMock ? "SAMPLE DATA" : "LIVE DATA"}
             </span>
           }
         />
@@ -288,7 +292,7 @@ export default function FeedbackMapPage() {
         />
         <button
           onClick={() => setFilters(draft)}
-          className="ml-auto rounded-xl bg-primary px-6 py-2.5 text-sm font-bold tracking-wide text-white hover:brightness-110"
+          className="ml-auto rounded-md bg-primary px-6 py-2.5 text-sm font-bold tracking-wide text-white hover:brightness-110"
         >
           APPLY FILTERS
         </button>
@@ -315,7 +319,7 @@ export default function FeedbackMapPage() {
             </MapContainer>
           </div>
 
-          <div className="absolute bottom-4 left-4 z-[1000] rounded-xl border border-line bg-surface/95 p-3.5 text-sm shadow-md">
+          <div className="absolute bottom-4 left-4 z-[1000] rounded-md border border-line bg-surface/95 p-3.5 text-sm shadow-md">
             <div className="mb-2 text-xs font-bold tracking-wide text-muted">MAP LEGEND</div>
             {Object.entries(MARKER_TYPES).map(([key, { label, color }]) => (
               <div key={key} className="mt-1.5 flex items-center gap-2 first:mt-0">
@@ -328,7 +332,7 @@ export default function FeedbackMapPage() {
 
         <Card className="flex max-h-[600px] flex-col p-5">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="font-display text-lg font-extrabold text-ink">Feedback Log</h2>
+            <h2 className="font-display text-lg font-bold text-ink">Feedback Log</h2>
             <span className="text-xs font-bold tracking-wide text-muted">{filtered.length} REPORTS</span>
           </div>
 

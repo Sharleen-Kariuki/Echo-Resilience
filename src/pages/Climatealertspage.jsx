@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Megaphone,
   Bell,
   SquarePen,
-  Sparkles,
+  Languages,
   Plus,
   X,
   Play,
@@ -14,24 +14,31 @@ import {
   ChevronLeft,
   MessageSquare,
   Volume2,
+  Loader2,
 } from "lucide-react";
 import Sidebar from "../components/layout/Sidebar";
 import Card from "../components/ui/Card";
 import Badge from "../components/ui/Badge";
 import Modal from "../components/ui/Modal";
-import { api, mockDialects, mockHazardTypes, mockRegions } from "../lib/api";
+import { api, resolveAudioUrl } from "../lib/api";
 
-const DEFAULT_DESCRIPTION =
-  "Heavy convective precipitation exceeding 180 mm is expected across low-lying settlements, with elevated river overflow risk and road access disruption.";
+const DESCRIPTION_PLACEHOLDER =
+  "e.g. Heavy convective precipitation exceeding 180 mm is expected across low-lying settlements, with elevated river overflow risk and road access disruption.";
 
-const FALLBACK_PREVIEW = {
-  simplifiedText:
-    "A dangerous flood may happen soon. Move away from river banks and follow local officials.",
-  translatedText:
-    "Khatarta fatahaaddu way sarreysaa. Ka fogow webiyada oo raac tilmaamaha masuuliyiinta.",
-};
+// Matches the backend's fixed GET /api/dialects list (backend/src/routes/dialects.js)
+// and what the AI pipeline can actually process: Somali/Oromo/Amharic/Swahili go
+// through Gemini directly, Turkana through a separate template lookup.
+const SUPPORTED_DIALECTS = ["Somali", "Oromo", "Amharic", "Swahili", "Turkana"];
 
-function Select({ label, options, value, onChange, getValue = (item) => item, getLabel = (item) => item }) {
+function Select({
+  label,
+  options,
+  value,
+  onChange,
+  getValue = (item) => item,
+  getLabel = (item) => item,
+  emptyLabel = "None available",
+}) {
   return (
     <label className="block">
       <span className="mb-2 block text-xs font-semibold tracking-wide text-muted">{label}</span>
@@ -39,8 +46,10 @@ function Select({ label, options, value, onChange, getValue = (item) => item, ge
         <select
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          className="w-full appearance-none rounded-xl border border-line bg-canvas px-4 py-3 text-[15px] font-semibold text-ink outline-none focus:border-primary"
+          disabled={options.length === 0}
+          className="w-full appearance-none rounded-md border border-line bg-canvas px-4 py-3 text-[15px] font-semibold text-ink outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-60"
         >
+          {options.length === 0 && <option value="">{emptyLabel}</option>}
           {options.map((option) => (
             <option key={getValue(option)} value={getValue(option)}>
               {getLabel(option)}
@@ -56,12 +65,79 @@ function Select({ label, options, value, onChange, getValue = (item) => item, ge
   );
 }
 
-function getResultText(payload, keys) {
+function getResultValue(payload, keys) {
+  const sources = [payload, payload?.data, payload?.historyRecord, payload?.aiResult, payload?.audioResult];
   for (const key of keys) {
-    if (payload?.[key]) return payload[key];
-    if (payload?.data?.[key]) return payload.data[key];
+    for (const source of sources) {
+      if (source && source[key] !== undefined && source[key] !== null) return source[key];
+    }
   }
-  return "";
+  return undefined;
+}
+
+function getResultText(payload, keys) {
+  return getResultValue(payload, keys) || "";
+}
+
+// The Gemini call behind simplify/translate/audio is a single request with no
+// native progress events, so this fakes a reassuring percentage: climbs
+// quickly at first then eases off approaching 92%, jumps to 100% on finish()
+// so the bar never appears to "hang" while genuinely waiting on the network.
+function useSimulatedProgress() {
+  const [percent, setPercent] = useState(0);
+  const timerRef = useRef(null);
+  const resetTimeoutRef = useRef(null);
+
+  function start() {
+    clearInterval(timerRef.current);
+    clearTimeout(resetTimeoutRef.current);
+    setPercent(8);
+    timerRef.current = setInterval(() => {
+      setPercent((current) => (current >= 92 ? current : current + Math.max(0.5, (92 - current) * 0.1)));
+    }, 250);
+  }
+
+  function finish() {
+    clearInterval(timerRef.current);
+    setPercent(100);
+    resetTimeoutRef.current = setTimeout(() => setPercent(0), 900);
+  }
+
+  function reset() {
+    clearInterval(timerRef.current);
+    clearTimeout(resetTimeoutRef.current);
+    setPercent(0);
+  }
+
+  return { percent, start, finish, reset };
+}
+
+function ProgressBar({ percent, label }) {
+  return (
+    <div className="w-full">
+      <div className="mb-1 flex items-center justify-between text-xs font-semibold text-muted">
+        <span>{label}</span>
+        <span>{Math.round(percent)}%</span>
+      </div>
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-line">
+        <div
+          className="h-full rounded-full bg-primary transition-all duration-300 ease-out"
+          style={{ width: `${Math.min(100, Math.max(0, percent))}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// The Python bridge's raw stderr trace is useful in the console but reads as
+// a crash to a non-technical admin. Gemini free-tier rate limiting is by far
+// the most common cause, so translate that one case into plain language.
+function friendlyError(message) {
+  if (!message) return message;
+  if (/RESOURCE_EXHAUSTED|rate limit/i.test(message)) {
+    return "Too many translation requests at once. Wait a minute before trying again — switching languages rapidly can hit this limit faster.";
+  }
+  return message;
 }
 
 function AddHazardTypeModal({ open, onClose, onCreated }) {
@@ -83,7 +159,7 @@ function AddHazardTypeModal({ open, onClose, onCreated }) {
       onClose();
     } catch (err) {
       console.error(err);
-      setError("Could not save this hazard type to the backend. It has been added locally instead.");
+      setError("Could not save this hazard type. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -97,7 +173,7 @@ function AddHazardTypeModal({ open, onClose, onCreated }) {
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}
-            className="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-primary"
+            className="w-full rounded-md border border-line bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-primary"
             placeholder="e.g. Wildfire"
             autoFocus
           />
@@ -106,13 +182,13 @@ function AddHazardTypeModal({ open, onClose, onCreated }) {
         {error && <p className="text-sm text-danger">{error}</p>}
 
         <div className="flex justify-end gap-3 pt-2">
-          <button type="button" onClick={onClose} className="rounded-xl border border-line px-5 py-2.5 text-sm font-semibold text-muted hover:text-ink">
+          <button type="button" onClick={onClose} className="rounded-md border border-line px-5 py-2.5 text-sm font-semibold text-muted hover:text-ink">
             Cancel
           </button>
           <button
             type="submit"
             disabled={submitting}
-            className="rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-60"
+            className="rounded-md bg-primary px-5 py-2.5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-60"
           >
             {submitting ? "Saving..." : "Add Hazard Type"}
           </button>
@@ -123,21 +199,29 @@ function AddHazardTypeModal({ open, onClose, onCreated }) {
 }
 
 export default function ClimateAlertsPage() {
-  const [hazardTypes, setHazardTypes] = useState(mockHazardTypes);
-  const [allRegions, setAllRegions] = useState(mockRegions);
-  const [dialects, setDialects] = useState(mockDialects);
-  const [hazardTypeId, setHazardTypeId] = useState(String(mockHazardTypes[0].id));
+  const navigate = useNavigate();
+  const [hazardTypes, setHazardTypes] = useState([]);
+  const [allRegions, setAllRegions] = useState([]);
+  const [hazardTypeId, setHazardTypeId] = useState("");
   const [severity, setSeverity] = useState("High");
-  const [regionIds, setRegionIds] = useState([mockRegions[0].id]);
-  const [description, setDescription] = useState(DEFAULT_DESCRIPTION);
-  const [dialect, setDialect] = useState(mockDialects[0]);
+  const [regionIds, setRegionIds] = useState([]);
+  const [description, setDescription] = useState("");
+  const [dialects, setDialects] = useState(SUPPORTED_DIALECTS);
+  const [dialect, setDialect] = useState(SUPPORTED_DIALECTS[0]);
   const [currentAlertId, setCurrentAlertId] = useState(null);
-  const [preview, setPreview] = useState(FALLBACK_PREVIEW);
+  const [preview, setPreview] = useState(null);
+  const [processError, setProcessError] = useState(null);
   const [audioUrl, setAudioUrl] = useState("");
-  const [status, setStatus] = useState("Loading API options...");
-  const [usingMock, setUsingMock] = useState(false);
+  const [audioError, setAudioError] = useState(null);
+  const [dispatchError, setDispatchError] = useState(null);
+  const [status, setStatus] = useState("Loading options...");
+  const [optionsLoading, setOptionsLoading] = useState(true);
+  const [optionsError, setOptionsError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hazardModalOpen, setHazardModalOpen] = useState(false);
+  const processProgress = useSimulatedProgress();
+  const audioProgress = useSimulatedProgress();
+  const dispatchProgress = useSimulatedProgress();
 
   useEffect(() => {
     let isMounted = true;
@@ -151,18 +235,28 @@ export default function ClimateAlertsPage() {
 
       if (!isMounted) return;
 
-      setHazardTypes(hazardsResult.data.length ? hazardsResult.data : mockHazardTypes);
-      setAllRegions(regionsResult.data.length ? regionsResult.data : mockRegions);
-      setDialects(dialectsResult.data.length ? dialectsResult.data : mockDialects);
-      setHazardTypeId(String((hazardsResult.data[0] ?? mockHazardTypes[0]).id));
-      setRegionIds([(regionsResult.data[0] ?? mockRegions[0]).id]);
-      setDialect((dialectsResult.data[0] ?? mockDialects[0]));
-      setUsingMock(hazardsResult.usingMock || regionsResult.usingMock || dialectsResult.usingMock);
-      setStatus(
-        hazardsResult.usingMock || regionsResult.usingMock || dialectsResult.usingMock
-          ? "Backend unavailable - mock options active"
-          : "Connected to Echo-Resilience API",
-      );
+      // Never substitute mock data here: if a call failed (usingMock), treat
+      // it as "no options loaded" so the failure is visible instead of hidden
+      // behind fabricated dropdown entries.
+      const hazards = hazardsResult.usingMock ? [] : hazardsResult.data;
+      const regions = regionsResult.usingMock ? [] : regionsResult.data;
+      // Dialects are safe to fall back on: the mock list matches what the
+      // backend actually advertises, and the preview switcher only ever
+      // needs to reflect "what the API currently says it supports".
+      const availableDialects = dialectsResult.data?.length ? dialectsResult.data : SUPPORTED_DIALECTS;
+
+      setHazardTypes(hazards);
+      setAllRegions(regions);
+      setDialects(availableDialects);
+      if (hazards[0]) setHazardTypeId(String(hazards[0].id));
+      // Regions are intentionally left unselected — the admin must explicitly
+      // choose which affected region(s) to target, not send to a silent default.
+      if (availableDialects[0]) setDialect(availableDialects[0]);
+
+      const failed = hazardsResult.usingMock || regionsResult.usingMock;
+      setOptionsError(failed ? "Could not load hazard types or regions." : null);
+      setStatus(failed ? "Could not load options right now" : "Ready");
+      setOptionsLoading(false);
     }
 
     loadOptions();
@@ -176,7 +270,8 @@ export default function ClimateAlertsPage() {
     [allRegions, regionIds],
   );
 
-  const selectedRegionId = selectedRegions[0]?.id ?? allRegions[0]?.id;
+  // No fallback to allRegions[0]: until the admin picks a region, nothing is "selected".
+  const selectedRegionId = selectedRegions[0]?.id;
   const selectedRegion = allRegions.find((region) => region.id === selectedRegionId);
   const selectedHazard = hazardTypes.find((hazard) => String(hazard.id) === String(hazardTypeId));
   const reachableCount = selectedRegions.reduce(
@@ -208,16 +303,9 @@ export default function ClimateAlertsPage() {
   }
 
   async function handleCreateHazardType(name) {
-    try {
-      const created = await api.createHazardType({ name });
-      setHazardTypes((current) => [...current, created]);
-      setHazardTypeId(String(created.id));
-    } catch (error) {
-      const fallback = { id: `local-${Date.now()}`, name };
-      setHazardTypes((current) => [...current, fallback]);
-      setHazardTypeId(String(fallback.id));
-      throw error;
-    }
+    const created = await api.createHazardType({ name });
+    setHazardTypes((current) => [...current, created]);
+    setHazardTypeId(String(created.id));
   }
 
   async function handleSaveDraft() {
@@ -225,53 +313,127 @@ export default function ClimateAlertsPage() {
     setStatus("Saving draft...");
     try {
       const alertId = await ensureAlert();
-      setStatus(`Draft saved as AL-${String(alertId).padStart(4, "0")} via /api/alerts`);
+      setStatus(`Draft saved as AL-${String(alertId).padStart(4, "0")}`);
     } catch (error) {
       console.error(error);
-      setUsingMock(true);
-      setStatus("Create-alert endpoint failed - draft kept locally only");
+      setStatus(`Could not save draft: ${friendlyError(error.message) ?? "unknown error"}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  // Shared by the manual "GENERATE AUDIO" button and the auto-refresh after a
+  // language switch. Returns whether it actually produced a playable file —
+  // callers use that to decide what status text to show. Progress is managed
+  // by the caller since it means something different in each context.
+  async function generateAudioFor(alertId, targetDialect, translatedText) {
+    try {
+      if (!translatedText) {
+        throw new Error("Run Simplify & Translate first so there's text to turn into audio.");
+      }
+      const result = await api.generateAlertAudio(alertId, { dialect: targetDialect, translatedText });
+      const audioPath = getResultValue(result, ["audioUrl", "audio_url", "audio_path", "audioPath"]);
+      const audioNote = getResultValue(result, ["audio_note", "audioNote"]);
+      if (!audioPath) {
+        throw new Error(audioNote || "Audio generation did not return an audio file for this dialect.");
+      }
+      setAudioUrl(resolveAudioUrl(audioPath));
+      setAudioError(null);
+      return true;
+    } catch (error) {
+      console.error(error);
+      setAudioUrl("");
+      setAudioError(`Audio generation failed: ${friendlyError(error.message) ?? "unknown error"}`);
+      return false;
+    }
+  }
+
+  async function runSimplifyTranslate(targetDialect) {
+    setIsSubmitting(true);
+    setProcessError(null);
+    setAudioUrl("");
+    setAudioError(null);
+    processProgress.start();
+    setStatus(`Switching to ${targetDialect} — running simplify/translate...`);
+    try {
+      const alertId = await ensureAlert();
+      const result = await api.processAlert(alertId, { dialect: targetDialect });
+      const simplifiedText = getResultText(result, ["simplifiedText", "simplified_text", "plainLanguageText"]);
+      const translatedText = getResultText(result, ["translatedText", "translated_text", "translation"]);
+      if (!simplifiedText && !translatedText) {
+        throw new Error("Could not generate a simplified or translated version. Please try again.");
+      }
+      const needsHumanReview = Boolean(getResultValue(result, ["needs_human_review", "needsHumanReview"]));
+      processProgress.finish();
+      setPreview({ simplifiedText, translatedText, dialect: targetDialect, needsHumanReview });
+
+      // Unverified text (e.g. Turkana fallback) never gets TTS server-side —
+      // don't bother trying, the audio panel already explains why.
+      if (needsHumanReview) {
+        setStatus(`Processed alert AL-${String(alertId).padStart(4, "0")} for ${targetDialect} (unverified — audio unavailable)`);
+        return;
+      }
+
+      setStatus(`Generating audio for ${targetDialect}...`);
+      audioProgress.start();
+      const audioOk = await generateAudioFor(alertId, targetDialect, translatedText);
+      if (audioOk) {
+        audioProgress.finish();
+      } else {
+        audioProgress.reset();
+      }
+      setStatus(
+        audioOk
+          ? `Processed alert AL-${String(alertId).padStart(4, "0")} for ${targetDialect} with audio ready`
+          : `Processed alert AL-${String(alertId).padStart(4, "0")} for ${targetDialect} (audio generation failed)`,
+      );
+    } catch (error) {
+      console.error(error);
+      processProgress.reset();
+      setPreview(null);
+      setProcessError(`Simplify & Translate failed: ${friendlyError(error.message) ?? "unknown error"}`);
+      setStatus("Could not generate a preview");
     } finally {
       setIsSubmitting(false);
     }
   }
 
   async function handleProcess() {
-    setIsSubmitting(true);
-    setStatus("Creating alert and running simplify/translate...");
-    try {
-      const alertId = await ensureAlert();
-      const result = await api.processAlert(alertId, { regionId: selectedRegionId, dialect });
-      setPreview({
-        simplifiedText:
-          getResultText(result, ["simplifiedText", "simplified_text", "plainLanguageText"]) ||
-          FALLBACK_PREVIEW.simplifiedText,
-        translatedText:
-          getResultText(result, ["translatedText", "translated_text", "translation"]) ||
-          FALLBACK_PREVIEW.translatedText,
-      });
-      setStatus(`Processed alert AL-${String(alertId).padStart(4, "0")} for ${dialect}`);
-    } catch (error) {
-      console.error(error);
-      setPreview(FALLBACK_PREVIEW);
-      setUsingMock(true);
-      setStatus("Process endpoint failed - showing mock preview");
-    } finally {
-      setIsSubmitting(false);
+    await runSimplifyTranslate(dialect);
+  }
+
+  // Clicking a language pill in the Preview panel always updates the selected
+  // dialect, and immediately re-runs simplify/translate (and, if the result
+  // is verified, audio generation) for that language instead of waiting for
+  // separate button presses.
+  async function handleDialectClick(item) {
+    setDialect(item);
+    if (isSubmitting) return;
+    if (!description || !hazardTypeId || regionIds.length === 0) {
+      setStatus("Add a description, hazard type, and at least one affected region before switching languages.");
+      return;
     }
+    await runSimplifyTranslate(item);
   }
 
   async function handleAudio() {
     setIsSubmitting(true);
+    setAudioError(null);
+    audioProgress.start();
     setStatus("Generating alert audio...");
     try {
       const alertId = await ensureAlert();
-      await api.generateAlertAudio(alertId, { regionId: selectedRegionId, dialect });
-      setAudioUrl(api.getAlertAudioUrl(alertId, dialect));
-      setStatus(`Audio ready from /api/alerts/${alertId}/audio/${dialect}`);
-    } catch (error) {
-      console.error(error);
-      setUsingMock(true);
-      setStatus("Audio endpoint failed - preview remains text only");
+      const ok = await generateAudioFor(alertId, dialect, preview?.translatedText);
+      if (ok) {
+        audioProgress.finish();
+      } else {
+        audioProgress.reset();
+      }
+      setStatus(
+        ok
+          ? `Audio ready for ${dialect}`
+          : "Could not generate audio - see error below.",
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -279,6 +441,8 @@ export default function ClimateAlertsPage() {
 
   async function handleDispatch() {
     setIsSubmitting(true);
+    setDispatchError(null);
+    dispatchProgress.start();
     setStatus("Dispatching alert to selected community...");
     try {
       const alertId = await ensureAlert();
@@ -287,24 +451,41 @@ export default function ClimateAlertsPage() {
         dialect,
         generateAudio: true,
       });
-      setPreview({
-        simplifiedText:
-          getResultText(result, ["simplifiedText", "simplified_text", "plainLanguageText"]) ||
-          preview.simplifiedText,
-        translatedText:
-          getResultText(result, ["translatedText", "translated_text", "translation"]) ||
-          preview.translatedText,
+      const resultStatus = getResultValue(result, ["status"]);
+      if (resultStatus !== "dispatched") {
+        throw new Error(`Alert saved but was not marked dispatched (status: ${resultStatus ?? "unknown"}).`);
+      }
+
+      // Success is confirmed by the backend's own status field, not just the
+      // absence of a thrown error. Let the bar visibly hit 100% before
+      // redirecting so the confirmation isn't just an instant page swap.
+      dispatchProgress.finish();
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      navigate("/alerts", {
+        state: {
+          dispatched: true,
+          alertId,
+          hazardName: selectedHazard?.name ?? "Alert",
+          regionName: selectedRegion?.name ?? "the selected region",
+          reachableCount,
+          dialect,
+        },
       });
-      setAudioUrl(api.getAlertAudioUrl(alertId, dialect));
-      setStatus(`Dispatched alert AL-${String(alertId).padStart(4, "0")} via /api/alerts/:id/dispatch`);
     } catch (error) {
       console.error(error);
-      setUsingMock(true);
-      setStatus("Dispatch endpoint failed - mock confirmation active");
+      dispatchProgress.reset();
+      setDispatchError(`Send to Community failed: ${friendlyError(error.message) ?? "unknown error"}`);
+      setStatus("Could not send this alert");
     } finally {
       setIsSubmitting(false);
     }
   }
+
+  const missingRequirements = [
+    !description && "a scientific description",
+    !hazardTypeId && "a hazard type",
+    regionIds.length === 0 && "at least one affected region",
+  ].filter(Boolean);
 
   return (
     <div className="flex min-h-screen bg-canvas text-ink">
@@ -320,7 +501,7 @@ export default function ClimateAlertsPage() {
           </Link>
           <div className="h-6 w-px bg-line" />
           <Megaphone size={22} className="text-primary" />
-          <h1 className="font-display text-2xl font-extrabold text-ink">
+          <h1 className="font-display text-2xl font-bold text-ink">
             Create New Resilience Alert
           </h1>
           <div className="ml-auto flex items-center gap-4">
@@ -336,9 +517,15 @@ export default function ClimateAlertsPage() {
         </header>
 
         <main className="flex-1 px-8 py-6">
+          {optionsError && (
+            <div className="mb-6 rounded-md border border-danger/40 bg-danger-soft p-4 text-sm text-danger">
+              {optionsError} Hazard type and region selection are unavailable right now. Please try again shortly.
+            </div>
+          )}
+
           <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
             <Card className="p-7">
-              <h2 className="mb-6 flex items-center gap-3 font-display text-xl font-extrabold">
+              <h2 className="mb-6 flex items-center gap-3 font-display text-xl font-bold">
                 <SquarePen size={20} className="text-primary" />
                 Hazard Parameters
               </h2>
@@ -353,12 +540,13 @@ export default function ClimateAlertsPage() {
                       options={hazardTypes}
                       getValue={(hazard) => hazard.id}
                       getLabel={(hazard) => hazard.name}
+                      emptyLabel={optionsLoading ? "Loading..." : "None available"}
                     />
                   </div>
                   <button
                     type="button"
                     onClick={() => setHazardModalOpen(true)}
-                    className="grid h-11.5 w-11.5 shrink-0 place-items-center rounded-xl border border-primary text-primary hover:bg-primary-soft/40"
+                    className="grid h-11.5 w-11.5 shrink-0 place-items-center rounded-md border border-primary text-primary hover:bg-primary-soft/40"
                     aria-label="Add hazard type"
                   >
                     <Plus size={18} />
@@ -376,11 +564,11 @@ export default function ClimateAlertsPage() {
                 <span className="mb-2 block text-xs font-semibold tracking-wide text-muted">
                   AFFECTED REGION
                 </span>
-                <div className="flex flex-wrap items-center gap-2 rounded-xl border border-line p-3">
+                <div className="flex flex-wrap items-center gap-2 rounded-md border border-line p-3">
                   {selectedRegions.map((region) => (
                     <span
                       key={region.id}
-                      className="flex items-center gap-2 rounded-full bg-primary px-3 py-1.5 text-sm font-semibold text-white"
+                      className="flex items-center gap-2 rounded-sm bg-primary px-3 py-1.5 text-sm font-semibold text-white"
                     >
                       {region.name}
                       <button onClick={() => removeRegion(region.id)} aria-label={`Remove ${region.name}`}>
@@ -407,35 +595,54 @@ export default function ClimateAlertsPage() {
 
               <div className="mb-6">
                 <span className="mb-2 block text-xs font-semibold tracking-wide text-muted">
-                  RAW SCIENTIFIC DESCRIPTION
+                  SCIENTIFIC DESCRIPTION
                 </span>
                 <textarea
                   value={description}
                   onChange={(event) => setDescription(event.target.value)}
-                  placeholder="Enter meteorological data, satellite observations, and technical risk metrics..."
-                  className="min-h-44 w-full resize-none rounded-xl border border-line bg-canvas p-4 font-mono text-sm text-ink outline-none placeholder:text-muted focus:border-primary"
+                  placeholder={DESCRIPTION_PLACEHOLDER}
+                  className="min-h-44 w-full resize-none rounded-md border border-line bg-canvas p-4 font-mono text-sm text-ink outline-none placeholder:text-muted focus:border-primary"
                 />
               </div>
 
               <button
                 onClick={handleProcess}
-                disabled={isSubmitting || !description || regionIds.length === 0}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3.5 font-semibold text-white shadow-sm hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={isSubmitting || !description || !hazardTypeId || regionIds.length === 0}
+                className="relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-md bg-primary py-3.5 font-semibold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <Sparkles size={18} /> Simplify &amp; Translate
+                {processProgress.percent > 0 && (
+                  <span
+                    aria-hidden="true"
+                    className="absolute inset-y-0 left-0 bg-white/25 transition-[width] duration-300 ease-out"
+                    style={{ width: `${Math.min(100, Math.max(0, processProgress.percent))}%` }}
+                  />
+                )}
+                <span className="relative flex items-center gap-2">
+                  {processProgress.percent > 0 ? (
+                    <>
+                      <Loader2 size={18} className="animate-spin" />
+                      Simplifying &amp; translating… {Math.round(processProgress.percent)}%
+                    </>
+                  ) : (
+                    <>
+                      <Languages size={18} /> Simplify &amp; Translate
+                    </>
+                  )}
+                </span>
               </button>
             </Card>
 
             <Card className="border-dashed bg-canvas p-7">
               <div className="mb-5 flex items-center justify-between">
-                <h2 className="font-display text-xl font-extrabold">Preview</h2>
-                <div className="flex gap-1 rounded-full bg-surface p-1">
+                <h2 className="font-display text-xl font-bold">Preview</h2>
+                <div className="flex gap-1 border border-line bg-canvas p-1">
                   {dialects.map((item) => (
                     <button
                       key={item}
-                      onClick={() => setDialect(item)}
-                      className={`rounded-full px-3 py-1 text-sm font-semibold transition-colors ${
-                        dialect === item ? "bg-primary-soft text-primary" : "text-muted hover:text-ink"
+                      onClick={() => handleDialectClick(item)}
+                      disabled={isSubmitting}
+                      className={`px-3 py-1 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                        dialect === item ? "bg-surface text-primary" : "text-muted hover:text-ink"
                       }`}
                     >
                       {item}
@@ -444,47 +651,85 @@ export default function ClimateAlertsPage() {
                 </div>
               </div>
 
-              <div className="rounded-xl border border-line bg-surface p-6">
-                <div className="mb-4 flex items-center gap-3">
+              <div className="rounded-md border border-line bg-surface p-6">
+                {isSubmitting && (processProgress.percent > 0 || audioProgress.percent > 0) && (
+                  <div className="mb-4 flex items-center gap-2 rounded-lg bg-primary-soft px-3 py-2 text-sm font-semibold text-primary">
+                    <Loader2 size={16} className="animate-spin" />
+                    {audioProgress.percent > 0
+                      ? `Generating audio for ${dialect}...`
+                      : preview && preview.dialect !== dialect
+                        ? `Switching from ${preview.dialect} to ${dialect} — translating...`
+                        : `Translating into ${dialect}...`}
+                  </div>
+                )}
+
+                <div className="mb-4 flex flex-wrap items-center gap-3">
                   <Badge tone="red">{severity.toUpperCase()} ALERT</Badge>
+                  {preview?.needsHumanReview && (
+                    <Badge tone="red">NEEDS REVIEW BEFORE SENDING</Badge>
+                  )}
                   <span className="text-xs text-muted">
-                    {usingMock ? "Mock-assisted preview" : "Echo-Resilience API preview"}
+                    {isSubmitting
+                      ? `Running for ${dialect}...`
+                      : preview
+                        ? `Preview (${preview.dialect ?? dialect})`
+                        : "No preview yet"}
                   </span>
                 </div>
 
-                <p className="mb-4 font-display text-2xl font-bold leading-snug text-ink">
-                  {preview.translatedText}
-                </p>
-                <p className="mb-6 text-[15px] leading-relaxed text-muted">{preview.simplifiedText}</p>
+                {preview ? (
+                  <div className={`transition-opacity ${isSubmitting ? "opacity-40" : "opacity-100"}`}>
+                    <p className="mb-4 font-display text-2xl font-bold leading-snug text-ink">
+                      {preview.translatedText}
+                    </p>
+                    <p className="mb-6 text-[15px] leading-relaxed text-muted">{preview.simplifiedText}</p>
+                  </div>
+                ) : (
+                  <p className={`mb-6 text-[15px] leading-relaxed ${processError ? "text-danger" : "text-muted"}`}>
+                    {processError ??
+                      "Run \"Simplify & Translate\" to generate a preview."}
+                  </p>
+                )}
+
+                {audioProgress.percent > 0 && (
+                  <div className="mb-4">
+                    <ProgressBar percent={audioProgress.percent} label={`Generating audio (${dialect})`} />
+                  </div>
+                )}
 
                 <div className="flex flex-wrap items-center gap-3">
-                  <button
-                    onClick={handleAudio}
-                    disabled={isSubmitting}
-                    className="inline-flex items-center gap-3 rounded-full border border-line py-2 pl-2 pr-5 disabled:opacity-60"
-                  >
-                    <span className="grid h-9 w-9 place-items-center rounded-full bg-primary text-white">
-                      <Volume2 size={16} />
+                  {preview?.needsHumanReview ? (
+                    <span className="inline-flex items-center gap-2 text-xs font-bold tracking-wide text-muted">
+                      <Volume2 size={14} /> Audio unavailable — unverified translation
                     </span>
-                    <span className="text-xs font-bold tracking-wide text-ink">GENERATE AUDIO</span>
-                  </button>
+                  ) : (
+                    <button
+                      onClick={handleAudio}
+                      disabled={isSubmitting || !preview}
+                      className="inline-flex items-center gap-2 rounded-md border border-line px-4 py-2.5 hover:bg-canvas disabled:opacity-60"
+                    >
+                      <Volume2 size={16} className="text-primary" />
+                      <span className="text-xs font-bold tracking-wide text-ink">GENERATE AUDIO</span>
+                    </button>
+                  )}
                   {audioUrl && (
-                    <audio controls src={audioUrl} className="h-10 max-w-full">
+                    <audio controls autoPlay src={audioUrl} className="h-10 max-w-full">
                       <track kind="captions" />
                     </audio>
                   )}
-                  {!audioUrl && (
+                  {!audioUrl && !preview?.needsHumanReview && (
                     <span className="inline-flex items-center gap-2 text-xs font-bold tracking-wide text-muted">
                       <Play size={14} /> Voice synthesis pending
                     </span>
                   )}
                 </div>
+                {audioError && <p className="mt-3 text-sm text-danger">{audioError}</p>}
               </div>
 
-              <div className="mt-4 flex items-start gap-3 rounded-xl bg-success-soft p-4 text-success">
+              <div className="mt-4 flex items-start gap-3 border border-success/25 bg-success-soft p-4 text-success">
                 <MessageSquare size={18} className="mt-0.5 shrink-0" />
                 <p className="text-sm">
-                  This will reach <span className="font-bold">{reachableCount || 340} registered numbers</span>{" "}
+                  This will reach <span className="font-bold">{reachableCount} registered numbers</span>{" "}
                   in <span className="underline">{selectedRegion?.name ?? "the selected region"}</span>.
                 </p>
               </div>
@@ -492,26 +737,40 @@ export default function ClimateAlertsPage() {
           </div>
         </main>
 
-        <footer className="flex items-center justify-between gap-4 border-t border-line bg-canvas px-8 py-4">
-          <div className="flex items-center gap-2 text-sm text-muted">
-            <History size={16} />
-            {status}
-          </div>
-          <div className="flex gap-3">
-            <button
-              onClick={handleSaveDraft}
-              disabled={isSubmitting || !description}
-              className="rounded-xl border border-primary bg-surface px-6 py-3 font-semibold text-primary hover:bg-primary-soft/40 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Save {selectedHazard?.name ?? "Alert"} Draft
-            </button>
-            <button
-              onClick={handleDispatch}
-              disabled={isSubmitting || !description || regionIds.length === 0}
-              className="flex items-center gap-2 rounded-xl bg-primary px-6 py-3 font-semibold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <Send size={18} /> Send to Community
-            </button>
+        <footer className="flex flex-col gap-2 border-t border-line bg-canvas px-8 py-4">
+          {dispatchError && <p className="text-sm text-danger">{dispatchError}</p>}
+          {!dispatchError && missingRequirements.length > 0 && (
+            <p className="text-xs text-muted">
+              Add {missingRequirements.join(", ")} to enable these actions.
+            </p>
+          )}
+          {dispatchProgress.percent > 0 && (
+            <ProgressBar
+              percent={dispatchProgress.percent}
+              label={dispatchProgress.percent >= 100 ? "Sent! Redirecting to Alert History..." : "Sending to community..."}
+            />
+          )}
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2 text-sm text-muted">
+              <History size={16} />
+              {status}
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={handleSaveDraft}
+                disabled={isSubmitting || !description || !hazardTypeId}
+                className="rounded-md border border-primary bg-surface px-6 py-3 font-semibold text-primary hover:bg-primary-soft/40 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Save {selectedHazard?.name ?? "Alert"} Draft
+              </button>
+              <button
+                onClick={handleDispatch}
+                disabled={isSubmitting || !description || !hazardTypeId || regionIds.length === 0}
+                className="flex items-center gap-2 rounded-md bg-primary px-6 py-3 font-semibold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Send size={18} /> Send to Community
+              </button>
+            </div>
           </div>
         </footer>
       </div>

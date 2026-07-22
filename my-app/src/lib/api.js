@@ -2,50 +2,9 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5001
 const AUTH_TOKEN_KEY = "echo_resilience_token";
 
 export const mockRegions = [
-  { id: 1, name: "Turkana Basin", totalRegistered: 450, latitude: 3.1167, longitude: 35.6, source: "ASAL Areas" },
-  { id: 2, name: "Marsabit North", totalRegistered: 340, latitude: 2.3284, longitude: 37.9899, source: "ASAL Areas" },
-  { id: 3, name: "Laisamis", totalRegistered: 280, latitude: 1.6167, longitude: 37.7833, source: "ASAL Areas" },
-  { id: 4, name: "Meru County", totalRegistered: 610, latitude: 0.2333, longitude: 37.9333, source: "ASAL Areas" },
-  { id: 5, name: "Tharaka-Nithi", totalRegistered: 195, latitude: -0.2833, longitude: 37.75, source: "ASAL Areas" },
-];
-
-export const mockCommunities = [
-  {
-    id: 1,
-    name: "Kibera Relief Network",
-    region: { id: 1, name: "Turkana Basin" },
-    totalRegistered: 3420,
-    registrationDate: new Date("2023-10-12").toISOString(),
-    source: "self-registered",
-    status: "active",
-  },
-  {
-    id: 2,
-    name: "Kisumu West Farmers Group",
-    region: { id: 2, name: "Marsabit North" },
-    totalRegistered: 1180,
-    registrationDate: new Date("2023-11-05").toISOString(),
-    source: "admin-added",
-    status: "active",
-  },
-  {
-    id: 3,
-    name: "Garissa Central Herders",
-    region: { id: 3, name: "Laisamis" },
-    totalRegistered: 640,
-    registrationDate: new Date("2023-11-28").toISOString(),
-    source: "self-registered",
-    status: "opted-out",
-  },
-  {
-    id: 4,
-    name: "Mombasa North Fisherfolk",
-    region: { id: 4, name: "Meru County" },
-    totalRegistered: 2205,
-    registrationDate: new Date("2023-12-01").toISOString(),
-    source: "self-registered",
-    status: "active",
-  },
+  { id: 1, name: "Turkana Basin", totalRegistered: 450 },
+  { id: 2, name: "Marsabit North", totalRegistered: 340 },
+  { id: 3, name: "Laisamis", totalRegistered: 280 },
 ];
 
 export const mockHazardTypes = [
@@ -89,7 +48,6 @@ export const mockFeedback = [
     transcriptionText: "Biyaha waxay ku kordhayaan buundada hore.",
     dialect: "Somali",
     severity: "Critical",
-    status: "processed",
     createdAt: new Date(Date.now() - 4 * 60 * 1000).toISOString(),
     audioFeedbackUrl: "",
   },
@@ -103,7 +61,6 @@ export const mockFeedback = [
     transcriptionText: "The community reports water shortages.",
     dialect: "Oromo",
     severity: "High",
-    status: "pending",
     createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
     audioFeedbackUrl: "",
   },
@@ -114,88 +71,26 @@ export const mockAlertHistory = [
     id: 1,
     alertId: 1,
     regionId: 1,
-    hazardType: { name: "Flash Flood" },
-    region: { name: "Lower Juba District" },
-    dialects: ["Maay", "Mahaa"],
     status: "dispatched",
     dialect: "Somali",
-    callsCount: 12402,
-    feedbackCount: 842,
     simplifiedText: "Flood risk is high. Move away from river banks and follow local officials.",
     translatedText:
       "Khatarta fatahaaddu way sarreysaa. Ka fogow webiyada oo raac tilmaamaha masuuliyiinta.",
     audioUrl: "/api/alerts/1/audio/Somali",
-    createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: 2,
-    alertId: 2,
-    regionId: 2,
-    hazardType: { name: "Wind Storm" },
-    region: { name: "Central Plateau" },
-    dialects: ["Bambara"],
-    status: "dispatched",
-    dialect: "Bambara",
-    callsCount: 8950,
-    feedbackCount: 1105,
-    createdAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: 3,
-    alertId: 3,
-    regionId: 3,
-    hazardType: { name: "Locust Swarm" },
-    region: { name: "Northern Plains" },
-    dialects: ["Afar", "Saho"],
-    status: "in_progress",
-    dialect: "Afar",
-    callsCount: 4200,
-    feedbackCount: 0,
-    createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: 4,
-    alertId: 4,
-    regionId: 1,
-    hazardType: { name: "Heatwave" },
-    region: { name: "Rift Valley North" },
-    dialects: ["Swahili"],
-    status: "dispatched",
-    dialect: "Swahili",
-    callsCount: 25110,
-    feedbackCount: 3490,
-    createdAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: 5,
-    alertId: 5,
-    regionId: 2,
-    hazardType: { name: "Landslide Risk" },
-    region: { name: "Western Peaks" },
-    dialects: ["Fula", "Wolof"],
-    status: "failed",
-    dialect: "Wolof",
-    callsCount: 0,
-    feedbackCount: 0,
-    createdAt: new Date(Date.now() - 11 * 24 * 60 * 60 * 1000).toISOString(),
+    createdAt: new Date(Date.now() - 8 * 60 * 1000).toISOString(),
   },
 ];
 
 function getToken() {
-  return localStorage.getItem(AUTH_TOKEN_KEY) || sessionStorage.getItem(AUTH_TOKEN_KEY);
+  return localStorage.getItem(AUTH_TOKEN_KEY);
 }
 
-export function getAuthToken() {
-  return getToken();
-}
-
-// `remember` controls where the token lives: localStorage survives browser
-// restarts, sessionStorage clears when the tab closes ("Remember this session").
-export function setAuthToken(token, remember = true) {
-  localStorage.removeItem(AUTH_TOKEN_KEY);
-  sessionStorage.removeItem(AUTH_TOKEN_KEY);
-  if (!token) return;
-  (remember ? localStorage : sessionStorage).setItem(AUTH_TOKEN_KEY, token);
+export function setAuthToken(token) {
+  if (token) {
+    localStorage.setItem(AUTH_TOKEN_KEY, token);
+  } else {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+  }
 }
 
 function buildUrl(path, query) {
@@ -206,15 +101,6 @@ function buildUrl(path, query) {
     }
   });
   return url.toString();
-}
-
-// Backend routes return audio as a relative path (e.g. "/audio/foo.wav").
-// The frontend dev server and API don't share an origin, so relative <audio
-// src="..."> tags resolve against the wrong host — always route them through
-// this to get an absolute URL that actually points at the API.
-export function resolveAudioUrl(path) {
-  if (!path) return "";
-  return new URL(path, API_BASE_URL).toString();
 }
 
 async function request(path, { method = "GET", body, query, auth = true } = {}) {
@@ -232,13 +118,7 @@ async function request(path, { method = "GET", body, query, auth = true } = {}) 
   });
 
   if (!response.ok) {
-    const raw = await response.text();
-    let message = raw;
-    try {
-      message = JSON.parse(raw)?.error || raw;
-    } catch {
-      // Not JSON — use the raw text as-is.
-    }
+    const message = await response.text();
     throw new Error(message || `Request failed: ${response.status}`);
   }
 
@@ -278,8 +158,7 @@ export const api = {
   getHazardTypes: () => withFallback(() => request("/api/hazard-types"), mockHazardTypes),
   createHazardType: (body) => request("/api/hazard-types", { method: "POST", body }),
 
-  getCommunities: (query) =>
-    withFallback(async () => unwrapList(await request("/api/communities", { query }), ["items", "data", "results", "communities"]), mockCommunities),
+  getCommunities: (query) => withFallback(() => request("/api/communities", { query }), []),
   createCommunity: (body) => request("/api/communities", { method: "POST", body }),
   updateCommunity: (id, body) => request(`/api/communities/${id}`, { method: "PATCH", body }),
   deleteCommunity: (id) => request(`/api/communities/${id}`, { method: "DELETE" }),
@@ -296,19 +175,12 @@ export const api = {
   getAlertAudioUrl: (id, dialect) => buildUrl(`/api/alerts/${id}/audio/${dialect}`),
 
   getAlertHistory: (query) =>
-    withFallback(
-      async () => unwrapList(await request("/api/alert-history", { query }), ["items", "data", "results", "alerts", "feedback", "history", "records"]),
-      mockAlertHistory,
-    ),
+    withFallback(async () => unwrapList(await request("/api/alert-history", { query })), mockAlertHistory),
   getAlertHistoryItem: (id) => request(`/api/alert-history/${id}`),
 
   getFeedback: (query) =>
-    withFallback(
-      async () => unwrapList(await request("/api/feedback", { query }), ["items", "data", "results", "alerts", "feedback", "history", "logs"]),
-      mockFeedback,
-    ),
+    withFallback(async () => unwrapList(await request("/api/feedback", { query })), mockFeedback),
   createFeedback: (body) => request("/api/feedback", { method: "POST", body, auth: false }),
   processFeedback: (id, body) =>
     request(`/api/feedback/${id}/process`, { method: "POST", body, auth: false }),
-  updateFeedback: (id, body) => request(`/api/feedback/${id}`, { method: "PATCH", body }),
 };

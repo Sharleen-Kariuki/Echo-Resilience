@@ -18,7 +18,7 @@ insert into `alert_history`.
 ## Setup
 
 ```bash
-pip install google-generativeai --break-system-packages
+pip install google-genai --break-system-packages
 export GEMINI_API_KEY="your-key-here"   # get one at https://aistudio.google.com/apikey
 ```
 

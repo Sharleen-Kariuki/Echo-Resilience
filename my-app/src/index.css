@@ -1,0 +1,42 @@
+@import "tailwindcss";
+
+/*
+  Tailwind v4 CSS-first config.
+  Every token below becomes a real utility, e.g.:
+    --color-primary  ->  bg-primary / text-primary / border-primary
+    --radius-card    ->  rounded-card
+    --font-display   ->  font-display
+  Change a value here and it updates everywhere. This is your single source of truth.
+*/
+@theme {
+  --color-canvas: #fcefe9; /* warm app background          */
+  --color-surface: #ffffff; /* cards                        */
+  --color-sidebar: #fffaf8; /* sidebar background           */
+
+  --color-primary: #b0432b; /* terracotta: brand, numbers   */
+  --color-primary-soft: #f7ddd4; /* active nav, soft icon tiles  */
+
+  --color-ink: #2c2622; /* primary text                 */
+  --color-muted: #8a7d76; /* secondary text               */
+  --color-line: #f0e2db; /* borders / dividers           */
+
+  --color-success: #1f7a54; /* green: resolved / positive   */
+  --color-success-soft: #cdeadb;
+  --color-danger: #c0392b; /* red: critical                */
+  --color-danger-soft: #f8d8d0;
+
+  --color-chip: #e7e3df; /* neutral badge background     */
+  --color-chip-ink: #6d6560; /* neutral badge text           */
+
+  --radius-card: 1.125rem;
+
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-display: "Poppins", "Inter", system-ui, sans-serif;
+}
+
+body {
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
