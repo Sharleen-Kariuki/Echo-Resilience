@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
 import {
+  dispatchSmsForHistory,
   findIvrFeedbackLogById,
   findIvrFeedbackLogs,
   findIvrHistory,
@@ -8,6 +9,7 @@ import {
   updateIvrHistoryStatus,
 } from "../services/ivr.service.js";
 import {
+  validateDispatchSmsPayload,
   validatePositiveInteger,
   validateUpdateIvrStatusPayload,
 } from "../validators/ivr.validator.js";
@@ -96,6 +98,44 @@ export async function patchIvrHistoryStatus(req: Request, res: Response, next: N
     return res.status(200).json({
       message: "IVR history status updated successfully",
       data: updated,
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function postDispatchSms(req: Request, res: Response, next: NextFunction) {
+  try {
+    const id = validatePositiveInteger(req.params.id);
+
+    if (!id) {
+      return res.status(400).json({ message: "Invalid IVR history id" });
+    }
+
+    const validation = validateDispatchSmsPayload(req.body);
+
+    if (!validation.valid || !validation.data) {
+      return res.status(400).json({
+        message: "Invalid request body",
+        errors: validation.errors,
+      });
+    }
+
+    const result = await dispatchSmsForHistory(id, validation.data.phoneNumbers);
+
+    if (!result) {
+      return res.status(404).json({ message: "IVR history item not found" });
+    }
+
+    return res.status(200).json({
+      message: "SMS dispatch complete",
+      provider: result.provider,
+      smsMessage: result.message,
+      recipients: result.recipients,
+      successCount: result.successCount,
+      failureCount: result.failureCount,
+      data: result.historyItem,
+      results: result.results,
     });
   } catch (error) {
     return next(error);

@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../generated/client/index.js';
 import dotenv from 'dotenv';
 
 // Load environment variables from the parent or current directory

@@ -1,5 +1,8 @@
 import { pool } from "../db/pool.js";
+import { getSmsProvider } from "./sms/index.js";
 import type {
+  DispatchSmsResponse,
+  IvrDispatchStatus,
   IvrFeedbackLog,
   IvrHistoryItem,
   RetryIvrDispatchResponse,
@@ -18,7 +21,28 @@ function mapIvrHistoryRow(row: any): IvrHistoryItem {
     hazardType: row.hazard_type,
     severityLevel: row.severity_level,
     rawScientificDescription: row.raw_scientific_description,
+    simplifiedText: row.simplified_text,
+    translatedText: row.translated_text,
+    audioUrl: row.audio_url,
   };
+}
+
+// The AI pipeline (see backend/src/services/aiService.js) populates
+// translated_text/simplified_text on this row when the alert is dispatched
+// via POST /api/alerts/:id/dispatch. If neither is present yet (e.g. someone
+// calls SMS dispatch before that step), fall back to a plain-English notice
+// built from the raw alert so the SMS still goes out.
+function buildSmsMessage(item: IvrHistoryItem): string {
+  const body = item.translatedText || item.simplifiedText;
+
+  if (body) {
+    return `EchoResilience Alert (${item.hazardType}, ${item.severityLevel}): ${body}`;
+  }
+
+  return `EchoResilience Alert: ${item.hazardType} (${item.severityLevel}) reported for your area. ${item.rawScientificDescription}`.slice(
+    0,
+    300
+  );
 }
 
 function mapIvrFeedbackRow(row: any): IvrFeedbackLog {
@@ -45,7 +69,10 @@ export async function findIvrHistory(): Promise<IvrHistoryItem[]> {
       ah.dispatched_at,
       ht.name AS hazard_type,
       a.severity_level,
-      a.raw_scientific_description
+      a.raw_scientific_description,
+      ah.simplified_text,
+      ah.translated_text,
+      ah.audio_url
     FROM alert_history ah
     JOIN alerts a ON ah.alert_id = a.id
     JOIN regions r ON ah.region_id = r.id
@@ -69,7 +96,10 @@ export async function findIvrHistoryById(id: number): Promise<IvrHistoryItem | n
       ah.dispatched_at,
       ht.name AS hazard_type,
       a.severity_level,
-      a.raw_scientific_description
+      a.raw_scientific_description,
+      ah.simplified_text,
+      ah.translated_text,
+      ah.audio_url
     FROM alert_history ah
     JOIN alerts a ON ah.alert_id = a.id
     JOIN regions r ON ah.region_id = r.id
@@ -143,20 +173,25 @@ export async function updateIvrHistoryStatus(
 
   const callsCount = payload.callsCount ?? existing.callsCount;
 
+  // $1 is repeated as both a direct assignment and a CASE comparison below —
+  // node-postgres's extended query protocol can't always resolve one type
+  // for a parameter used in two different syntactic roles ("inconsistent
+  // types deduced for parameter $1"). Passing status again as its own $4
+  // param sidesteps the ambiguity instead of relying on a cast.
   const updateQuery = `
     UPDATE alert_history
     SET
       status = $1,
       calls_count = $2,
       dispatched_at = CASE
-        WHEN $1 = 'dispatched' THEN CURRENT_TIMESTAMP
+        WHEN $4 = 'dispatched' THEN CURRENT_TIMESTAMP
         ELSE dispatched_at
       END
     WHERE id = $3
     RETURNING id;
   `;
 
-  await pool.query(updateQuery, [payload.status, callsCount, id]);
+  await pool.query(updateQuery, [payload.status, callsCount, id, payload.status]);
 
   return findIvrHistoryById(id);
 }
@@ -183,5 +218,60 @@ export async function retryIvrDispatch(id: number): Promise<RetryIvrDispatchResp
     success: true,
     message: "IVR dispatch retry queued successfully.",
     alertHistoryId: id,
+  };
+}
+
+// Sends the AI-generated dialect warning (already produced by
+// POST /api/alerts/:id/dispatch in the main backend) as SMS to a
+// manually-supplied list of phone numbers — there is no recipient/phone
+// table yet, so the caller must provide numbers explicitly (see
+// backend_ivr_module/README.md).
+export async function dispatchSmsForHistory(
+  id: number,
+  phoneNumbers: string[]
+): Promise<DispatchSmsResponse | null> {
+  const existing = await findIvrHistoryById(id);
+
+  if (!existing) {
+    return null;
+  }
+
+  const message = buildSmsMessage(existing);
+  const provider = getSmsProvider();
+
+  const results = await Promise.all(
+    phoneNumbers.map((to) => provider.sendSms({ to, message, alertHistoryId: id }))
+  );
+
+  const successCount = results.filter((result) => result.success).length;
+  const failureCount = results.length - successCount;
+  const newStatus: IvrDispatchStatus = successCount > 0 ? "dispatched" : "failed";
+
+  // See the identical $1-reuse note in updateIvrHistoryStatus above.
+  const updateQuery = `
+    UPDATE alert_history
+    SET
+      status = $1,
+      calls_count = calls_count + $2,
+      dispatched_at = CASE
+        WHEN $4 = 'dispatched' THEN CURRENT_TIMESTAMP
+        ELSE dispatched_at
+      END
+    WHERE id = $3
+    RETURNING id;
+  `;
+
+  await pool.query(updateQuery, [newStatus, successCount, id, newStatus]);
+
+  const historyItem = await findIvrHistoryById(id);
+
+  return {
+    provider: provider.name,
+    historyItem: historyItem as IvrHistoryItem,
+    message,
+    recipients: phoneNumbers,
+    successCount,
+    failureCount,
+    results,
   };
 }

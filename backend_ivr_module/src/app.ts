@@ -11,6 +11,8 @@ export const app = express();
 app.use(helmet());
 app.use(cors({ origin: env.corsOrigin }));
 app.use(express.json());
+// Twilio's voice callbacks post form-encoded bodies, not JSON.
+app.use(express.urlencoded({ extended: true }));
 app.use(morgan("dev"));
 
 app.get("/health", (_req, res) => {

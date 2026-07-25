@@ -11,6 +11,9 @@ export type IvrHistoryItem = {
   hazardType: string;
   severityLevel: string;
   rawScientificDescription: string;
+  simplifiedText: string | null;
+  translatedText: string | null;
+  audioUrl: string | null;
 };
 
 export type IvrFeedbackLog = {
@@ -32,4 +35,27 @@ export type RetryIvrDispatchResponse = {
   success: boolean;
   message: string;
   alertHistoryId: number;
+};
+
+export type DispatchSmsPayload = {
+  phoneNumbers: string[];
+};
+
+export type SmsDispatchResult = {
+  to: string;
+  success: boolean;
+  status: string;
+  providerMessageId?: string;
+  error?: string;
+  raw?: unknown;
+};
+
+export type DispatchSmsResponse = {
+  provider: string;
+  historyItem: IvrHistoryItem;
+  message: string;
+  recipients: string[];
+  successCount: number;
+  failureCount: number;
+  results: SmsDispatchResult[];
 };

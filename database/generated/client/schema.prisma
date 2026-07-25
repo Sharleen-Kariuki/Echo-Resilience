@@ -14,7 +14,7 @@ generator client {
   // import from another package would resolve to its own, never-generated
   // copy and crash at runtime. Generating to one fixed, explicit path that
   // every consumer imports via a relative path sidesteps that entirely.
-  output = "../generated/client"
+  output   = "../generated/client"
 }
 
 // 1. USER ROLES ENUM

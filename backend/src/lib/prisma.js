@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../../../database/generated/client/index.js';
 
 // Singleton pattern — one connection pool shared across all requests
 const prisma = new PrismaClient({

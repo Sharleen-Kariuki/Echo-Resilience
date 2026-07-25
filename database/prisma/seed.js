@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../generated/client/index.js';
 import bcrypt from 'bcryptjs';
 
 // Uses its own client (not src/client.js) so it stays free of the app's
@@ -29,13 +29,16 @@ function daysAgo(days) {
 
 async function clearExisting() {
   // Delete in FK-safe order (children before parents).
+  await prisma.callAttempt.deleteMany();
   await prisma.feedbackLog.deleteMany();
   await prisma.alertHistory.deleteMany();
   await prisma.alertRegion.deleteMany();
   await prisma.alert.deleteMany();
+  await prisma.communityMember.deleteMany();
   await prisma.community.deleteMany();
   await prisma.hazardType.deleteMany();
   await prisma.region.deleteMany();
+  await prisma.ivrConfig.deleteMany();
   await prisma.user.deleteMany();
 }
 
@@ -76,8 +79,9 @@ async function seedCommunities(regions) {
     { name: 'Meru Market Traders', region: 'Meru County', totalRegistered: 1340, source: 'admin-added', status: 'active' },
   ];
 
+  const communities = {};
   for (const row of rows) {
-    await prisma.community.create({
+    communities[row.name] = await prisma.community.create({
       data: {
         name: row.name,
         regionId: regions[row.region].id,
@@ -88,6 +92,52 @@ async function seedCommunities(regions) {
       },
     });
   }
+  return communities;
+}
+
+// Demo/test phone numbers only — Africa's Talking SANDBOX routes every SMS
+// to the dashboard simulator and every voice call attempt the same way
+// regardless of the number dialed, so these don't need to be (and aren't)
+// real people's numbers.
+async function seedCommunityMembers(regions, communities) {
+  const rows = [
+    { fullName: 'Ekaru Loyapan', phoneNumber: '+254700000001', region: 'Turkana Basin', community: 'Turkana Riverside Network', language: 'Turkana', dialect: 'Turkana' },
+    { fullName: 'Naomi Ariong', phoneNumber: '+254700000002', region: 'Turkana Basin', community: 'Turkana Riverside Network', language: 'Turkana', dialect: 'Turkana' },
+    { fullName: 'Halima Guyo', phoneNumber: '+254700000003', region: 'Marsabit North', community: 'Marsabit Herders Collective', language: 'Oromo', dialect: 'Oromo' },
+    { fullName: 'Diba Boru', phoneNumber: '+254700000004', region: 'Marsabit North', community: null, language: 'Oromo', dialect: 'Oromo' },
+    { fullName: 'Amina Yusuf', phoneNumber: '+254700000005', region: 'Laisamis', community: "Laisamis Women's Group", language: 'Somali', dialect: 'Somali' },
+    { fullName: 'John Mutuku', phoneNumber: '+254700000006', region: 'Meru County', community: 'Meru Highland Farmers', language: 'Swahili', dialect: 'Swahili' },
+    { fullName: 'Grace Kanini', phoneNumber: '+254700000007', region: 'Meru County', community: null, language: 'Swahili', dialect: 'Swahili' },
+    { fullName: 'Samuel Mwangi', phoneNumber: '+254700000008', region: 'Tharaka-Nithi', community: 'Tharaka Relief Committee', language: 'Amharic', dialect: 'Amharic' },
+  ];
+
+  for (const row of rows) {
+    await prisma.communityMember.create({
+      data: {
+        fullName: row.fullName,
+        phoneNumber: row.phoneNumber,
+        regionId: regions[row.region].id,
+        communityId: row.community ? communities[row.community].id : null,
+        language: row.language,
+        dialect: row.dialect,
+      },
+    });
+  }
+}
+
+// No voicePhoneNumber yet (no live Africa's Talking Voice app/number
+// allocated) — broadcast automatically falls back to SMS until this row is
+// updated with one. Update via Prisma Studio (`npx prisma studio`) or a
+// direct SQL UPDATE, since there's no admin UI for this yet.
+async function seedIvrConfig() {
+  await prisma.ivrConfig.create({
+    data: {
+      provider: 'africastalking',
+      voicePhoneNumber: null,
+      defaultLanguage: 'Swahili',
+      isActive: true,
+    },
+  });
 }
 
 async function seedAlerts(hazards, regions, users) {
@@ -309,7 +359,13 @@ async function main() {
   const hazards = await seedHazardTypes();
 
   console.log('Seeding communities...');
-  await seedCommunities(regions);
+  const communities = await seedCommunities(regions);
+
+  console.log('Seeding community members...');
+  await seedCommunityMembers(regions, communities);
+
+  console.log('Seeding IVR config...');
+  await seedIvrConfig();
 
   console.log('Seeding alerts...');
   const alerts = await seedAlerts(hazards, regions, users);
