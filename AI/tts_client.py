@@ -17,7 +17,7 @@ coverage for these dialects is inconsistent to nonexistent. Generating the
 audio yourself here means you control and can verify quality before it ever
 reaches a phone call.
 
-Requires: pip install google-generativeai --break-system-packages
+Requires: pip install google-genai --break-system-packages
 (same package/key you already set up for gemini_client.py)
 """
 
@@ -56,18 +56,19 @@ def generate_audio(text: str, dialect: str, alert_id: str, model: str = "gemini-
     prove the concept.
     """
     try:
-        import google.generativeai as genai
+        from google import genai
+        from google.genai import types
     except ImportError as e:
         raise RuntimeError(
-            "google-generativeai not installed. Run: "
-            "pip install google-generativeai --break-system-packages"
+            "google-genai not installed. Run: "
+            "pip install google-genai --break-system-packages"
         ) from e
 
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY environment variable not set.")
 
-    genai.configure(api_key=api_key)
+    client = genai.Client(api_key=api_key)
 
     # Keep the delivery style consistent and calm — this is a disaster alert,
     # not a commercial. Clear, steady, moderate pace, no dramatization.
@@ -77,10 +78,10 @@ def generate_audio(text: str, dialect: str, alert_id: str, model: str = "gemini-
         f"over a phone line: {text}"
     )
 
-    tts_model = genai.GenerativeModel(model_name=model)
-    response = tts_model.generate_content(
-        style_prompt,
-        generation_config={"response_modalities": ["AUDIO"]},
+    response = client.models.generate_content(
+        model=model,
+        contents=style_prompt,
+        config=types.GenerateContentConfig(response_modalities=["AUDIO"]),
     )
 
     pcm_data = response.candidates[0].content.parts[0].inline_data.data

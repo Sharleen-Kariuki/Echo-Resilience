@@ -25,7 +25,8 @@ export default function LoginPage() {
       navigate(location.state?.from?.pathname ?? "/", { replace: true });
     } catch (err) {
       console.error(err);
-      setError(err.message || "Invalid email or password.");
+      const isTechnical = !err.message || /request failed|failed to fetch|networkerror/i.test(err.message);
+      setError(isTechnical ? "Couldn't sign you in right now. Please try again." : err.message);
     } finally {
       setSubmitting(false);
     }
@@ -53,8 +54,8 @@ export default function LoginPage() {
             autoComplete="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            placeholder="admin@echoresilience.gov"
-            className="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-primary placeholder:text-muted/70"
+            placeholder="you@example.com"
+            className="w-full rounded-md border border-line bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-primary placeholder:text-muted/70"
           />
         </label>
 
@@ -78,7 +79,7 @@ export default function LoginPage() {
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               placeholder="••••••••••••"
-              className="w-full rounded-xl border border-line bg-canvas py-2.5 pl-9 pr-9 text-sm text-ink outline-none focus:border-primary"
+              className="w-full rounded-md border border-line bg-canvas py-2.5 pl-9 pr-9 text-sm text-ink outline-none focus:border-primary"
             />
             <button
               type="button"
@@ -109,7 +110,7 @@ export default function LoginPage() {
         <button
           type="submit"
           disabled={submitting}
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 font-semibold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+          className="flex w-full items-center justify-center gap-2 rounded-md bg-primary py-3 font-semibold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {submitting ? "Signing in..." : "Sign In"} <ArrowRight size={16} />
         </button>

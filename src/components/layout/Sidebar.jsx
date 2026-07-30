@@ -9,6 +9,7 @@ import {
   LogOut,
 } from "lucide-react";
 import { useAuth } from "../../lib/auth";
+import Logo from "../ui/Logo";
 
 const NAV = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
@@ -34,7 +35,7 @@ export default function Sidebar({ user: userOverride }) {
 
   const user = userOverride ?? {
     name: authUser?.fullName ?? "Admin User",
-    detail: authUser ? (ROLE_LABELS[authUser.role] ?? authUser.role) : "admin@echo.org",
+    detail: authUser ? (ROLE_LABELS[authUser.role] ?? authUser.role) : "Administrator",
     initials: authUser ? initialsFor(authUser.fullName).toUpperCase() : "AU",
   };
 
@@ -44,58 +45,53 @@ export default function Sidebar({ user: userOverride }) {
   }
 
   return (
-    <aside className="hidden w-70 shrink-0 flex-col border-r border-line bg-sidebar px-5 py-6 md:flex">
+    <aside className="hidden w-70 shrink-0 flex-col bg-sidebar px-5 py-6 md:flex">
       {/* Brand */}
-      <div className="mb-10 flex items-center gap-3">
-        <div className="grid h-10 w-10 place-items-center rounded-xl bg-primary">
-          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-            <path
-              d="M12 3C7 3 3.5 6.5 3.5 12c0 4 2.5 7 6 8 0-4 1.5-7 5-9-2.5 3-3.5 6-3.5 9 4-1 8-4.5 8-10C19 6 16 3 12 3Z"
-              fill="#fff"
-            />
-          </svg>
-        </div>
+      <div className="mb-10 flex items-center gap-3 px-1">
+        <Logo size={36} />
         <div>
-          <div className="font-display text-lg font-extrabold leading-none text-primary">
-            EchoResilience
+          <div className="font-display text-lg font-semibold leading-none tracking-tight text-sidebar-ink">
+            Echo<span className="text-sidebar-muted">Resilience</span>
           </div>
-          <div className="mt-1 text-xs text-muted">Climate Admin</div>
+          <div className="mt-1.5 text-[11px] font-medium uppercase tracking-[0.14em] text-sidebar-muted">
+            Climate Admin
+          </div>
         </div>
       </div>
 
       {/* Nav */}
-      <nav className="flex flex-1 flex-col gap-1.5">
+      <nav className="flex flex-1 flex-col gap-1">
         {NAV.map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}
             to={to}
             end={end}
             className={({ isActive }) =>
-              `flex items-center gap-3.5 rounded-xl px-4 py-3 text-[15px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
+              `flex items-center gap-3.5 border-l-2 px-4 py-2.5 text-[15px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
                 isActive
-                  ? "bg-primary-soft font-semibold text-primary shadow-[inset_3px_0_0_var(--color-primary)]"
-                  : "text-muted hover:bg-primary-soft/40 hover:text-ink"
+                  ? "border-sidebar-ink font-semibold text-sidebar-ink"
+                  : "border-transparent text-sidebar-muted hover:border-sidebar-line hover:text-sidebar-ink"
               }`
             }
           >
-            <Icon size={20} strokeWidth={2} />
+            <Icon size={18} strokeWidth={2} />
             <span>{label}</span>
           </NavLink>
         ))}
       </nav>
 
       {/* User card */}
-      <div className="flex items-center gap-3 rounded-2xl border border-line bg-surface p-3">
-        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-primary text-xs font-bold text-white">
+      <div className="flex items-center gap-3 border-t border-sidebar-line pt-4">
+        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-primary-soft font-mono text-xs font-semibold text-primary">
           {user.initials}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-bold text-ink">{user.name}</div>
-          <div className="truncate text-xs text-muted">{user.detail}</div>
+          <div className="truncate text-sm font-semibold text-sidebar-ink">{user.name}</div>
+          <div className="truncate text-xs text-sidebar-muted">{user.detail}</div>
         </div>
         <button
           onClick={handleSignOut}
-          className="rounded-lg p-1.5 text-ink hover:bg-canvas focus-visible:outline-2 focus-visible:outline-primary"
+          className="rounded-md p-1.5 text-sidebar-muted hover:bg-sidebar-line hover:text-sidebar-ink focus-visible:outline-2 focus-visible:outline-primary"
           aria-label="Sign out"
         >
           <LogOut size={18} />

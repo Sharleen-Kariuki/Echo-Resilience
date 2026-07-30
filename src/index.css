@@ -1,37 +1,48 @@
 @import "tailwindcss";
 
 /*
-  Tailwind v4 CSS-first config.
-  Every token below becomes a real utility, e.g.:
-    --color-primary  ->  bg-primary / text-primary / border-primary
-    --radius-card    ->  rounded-card
-    --font-display   ->  font-display
-  Change a value here and it updates everywhere. This is your single source of truth.
+  EchoResilience — climate alert ops console for East Africa.
+  Warm earth tones with punchy gold, terracotta, and sedge green.
+  Tailwind v4 CSS-first config: change tokens here, they propagate everywhere.
 */
 @theme {
-  --color-canvas: #fcefe9; /* warm app background          */
-  --color-surface: #ffffff; /* cards                        */
-  --color-sidebar: #fffaf8; /* sidebar background           */
+  --color-canvas: #f2f2ef;
+  --color-surface: #ffffff;
+  --color-sidebar: #163829;
+  --color-sidebar-ink: #f2f2f0;
+  --color-sidebar-muted: #93ab9e;
+  --color-sidebar-line: #234937;
 
-  --color-primary: #b0432b; /* terracotta: brand, numbers   */
-  --color-primary-soft: #f7ddd4; /* active nav, soft icon tiles  */
+  --color-primary: #1f4d3a;
+  --color-primary-soft: #dcebe3;
+  --color-primary-glow: #2f7350;
 
-  --color-ink: #2c2622; /* primary text                 */
-  --color-muted: #8a7d76; /* secondary text               */
-  --color-line: #f0e2db; /* borders / dividers           */
+  --color-warn: #c9922a;
+  --color-warn-soft: #f5e6c4;
 
-  --color-success: #1f7a54; /* green: resolved / positive   */
-  --color-success-soft: #cdeadb;
-  --color-danger: #c0392b; /* red: critical                */
-  --color-danger-soft: #f8d8d0;
+  --color-clay: #c23b2c;
+  --color-clay-soft: #f5ded9;
 
-  --color-chip: #e7e3df; /* neutral badge background     */
-  --color-chip-ink: #6d6560; /* neutral badge text           */
+  --color-accent: #2d7a6e;
+  --color-accent-soft: #d4ebe6;
 
-  --radius-card: 1.125rem;
+  --color-ink: #18171a;
+  --color-muted: #75746e;
+  --color-line: #e2e1db;
+
+  --color-success: #2f7a52;
+  --color-success-soft: #d8ead9;
+  --color-danger: #a83228;
+  --color-danger-soft: #f0d5cf;
+
+  --color-chip: #ececee;
+  --color-chip-ink: #5c5b56;
+
+  --radius-card: 0rem;
 
   --font-sans: "Inter", system-ui, -apple-system, sans-serif;
-  --font-display: "Poppins", "Inter", system-ui, sans-serif;
+  --font-display: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
 }
 
 body {

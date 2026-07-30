@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import {
   Bell,
   FileText,
@@ -9,11 +8,12 @@ import {
   Clock,
   Play,
   Pause,
+  CornerUpLeft,
   CheckCircle2,
+  Share2,
   Calendar,
   ChevronDown,
   RefreshCw,
-  Map,
 } from "lucide-react";
 import AppLayout from "../components/layout/AppLayout";
 import TopBar from "../components/layout/TopBar";
@@ -45,33 +45,6 @@ function getHazardName(item) {
   return item.hazardType?.name ?? item.hazardTypeName ?? "Climate Risk";
 }
 
-function downloadFeedbackCsv(rows) {
-  const header = ["ID", "Region", "Hazard Type", "Dialect", "Severity", "Status", "Transcription", "Translation", "Date"];
-  const lines = rows.map((row) =>
-    [
-      row.id,
-      getRegionName(row),
-      getHazardName(row),
-      row.dialect ?? row.dialectHint ?? "",
-      getSeverity(row),
-      row.status ?? (row.processed ? "processed" : "pending"),
-      row.transcriptionText ?? row.transcription ?? "",
-      row.translationText ?? row.translation ?? "",
-      new Date(row.createdAt ?? Date.now()).toISOString(),
-    ]
-      .map((value) => `"${String(value).replace(/"/g, '""')}"`)
-      .join(","),
-  );
-  const csv = [header.join(","), ...lines].join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `echo-resilience-feedback-report-${new Date().toISOString().slice(0, 10)}.csv`;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
 function getSeverity(item) {
   return item.severity ?? item.severityLevel ?? (getHazardName(item).toLowerCase().includes("flood") ? "Critical" : "High");
 }
@@ -86,7 +59,7 @@ function getIcon(item) {
 function AudioPlayer({ duration = "0:24", progress = 0.35, src }) {
   const [playing, setPlaying] = useState(false);
   return (
-    <div className="flex items-center gap-3 rounded-md bg-canvas p-3">
+    <div className="flex items-center gap-3 rounded-xl bg-canvas p-3">
       <button
         onClick={() => setPlaying((current) => !current)}
         className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-primary text-white"
@@ -124,15 +97,14 @@ function AvatarGroup({ people }) {
   );
 }
 
-function FeedbackCard({ item, onProcess, onResolve, resolving }) {
+function FeedbackCard({ item, onProcess }) {
   const Icon = getIcon(item);
   const severity = getSeverity(item);
   const isCritical = severity.toLowerCase() === "critical";
-  const isResolved = item.status === "resolved";
-  const isProcessed = item.processed || item.status === "processed" || isResolved;
-  const action = isProcessed
-    ? { label: resolving ? "Resolving..." : "Mark as Resolved", icon: CheckCircle2, tone: "success", onClick: () => onResolve(item) }
-    : { label: "Process Audio", icon: RefreshCw, tone: "primary", onClick: () => onProcess(item) };
+  const action =
+    item.processed || item.status === "processed"
+      ? { label: "Mark as Resolved", icon: CheckCircle2, tone: "success" }
+      : { label: "Process Audio", icon: RefreshCw, tone: "primary" };
   const ActionIcon = action.icon;
   const actionColor = action.tone === "success" ? "text-success" : "text-primary";
   const assignees = item.assignees ?? (isCritical ? ["JD", "AK"] : []);
@@ -140,7 +112,7 @@ function FeedbackCard({ item, onProcess, onResolve, resolving }) {
   return (
     <Card className="flex flex-col overflow-hidden">
       <div className="flex items-start gap-3 p-5">
-        <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-md ${isCritical ? TILE.red : TILE.green}`}>
+        <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${isCritical ? TILE.red : TILE.green}`}>
           <Icon size={20} />
         </div>
         <div className="min-w-0">
@@ -177,7 +149,7 @@ function FeedbackCard({ item, onProcess, onResolve, resolving }) {
         </div>
 
         <div className="flex flex-wrap gap-2 pb-4">
-          {[getHazardName(item)].filter(Boolean).map((tag) => (
+          {[getHazardName(item), item.status].filter(Boolean).map((tag) => (
             <span key={tag} className="rounded-md bg-chip px-2.5 py-1 text-xs font-medium text-chip-ink">
               #{String(tag).replace(/\s+/g, "_").toLowerCase()}
             </span>
@@ -186,55 +158,48 @@ function FeedbackCard({ item, onProcess, onResolve, resolving }) {
       </div>
 
       <div className="mt-auto flex items-center justify-between border-t border-line bg-canvas/60 px-5 py-3">
-        {isResolved ? (
-          <span className="flex items-center gap-2 text-sm font-semibold text-success">
-            <CheckCircle2 size={16} /> Resolved
-          </span>
-        ) : (
-          <button
-            onClick={action.onClick}
-            disabled={resolving}
-            className={`flex items-center gap-2 text-sm font-semibold ${actionColor} hover:underline disabled:cursor-not-allowed disabled:opacity-60`}
-          >
-            <ActionIcon size={16} /> {action.label}
-          </button>
-        )}
+        <button
+          onClick={() => onProcess(item)}
+          className={`flex items-center gap-2 text-sm font-semibold ${actionColor} hover:underline`}
+        >
+          <ActionIcon size={16} /> {action.label}
+        </button>
         {assignees.length > 0 ? <AvatarGroup people={assignees} /> : <span className="text-sm italic text-muted">No one assigned</span>}
       </div>
     </Card>
   );
 }
 
-function HotspotCard({ feedback, onOpenMap }) {
+function HotspotCard({ feedback }) {
   const criticalCount = feedback.filter((item) => getSeverity(item).toLowerCase() === "critical").length;
   const resolvedCount = feedback.filter((item) => String(item.status).toLowerCase() === "resolved").length;
 
   return (
-    <Card className="flex flex-col p-5">
-      <div className="font-display text-lg font-bold text-ink">Hotspot summary</div>
-      <div className="text-sm text-muted">Critical and resolved reports across all regions</div>
-
-      <div className="mt-4 grid grid-cols-2 gap-3">
-        <div className="border border-line p-4">
-          <div className="flex items-center gap-2 text-sm font-semibold text-danger">
-            <span className="h-2 w-2 rounded-full bg-danger" /> Critical
+    <Card className="overflow-hidden">
+      <div className="p-5">
+        <div className="font-display text-lg font-extrabold text-ink">Hotspot Visualization</div>
+        <div className="text-sm text-muted">Real-time feedback clustering from /api/feedback</div>
+      </div>
+      <div
+        className="relative mx-5 mb-5 h-72 overflow-hidden rounded-xl border border-line"
+        style={{
+          backgroundColor: "#edf0ea",
+          backgroundImage:
+            "radial-gradient(circle at 58% 42%, rgba(176,67,43,0.40), transparent 34%)," +
+            "radial-gradient(circle at 38% 68%, rgba(31,122,84,0.32), transparent 32%)," +
+            "radial-gradient(circle at 74% 66%, rgba(176,67,43,0.28), transparent 30%)," +
+            "radial-gradient(circle at 25% 30%, rgba(31,122,84,0.20), transparent 26%)",
+        }}
+      >
+        <div className="absolute bottom-3 right-3 rounded-lg border border-line bg-surface/95 px-3 py-2 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="h-2.5 w-2.5 rounded-full bg-primary" /> Critical Reports: {criticalCount}
           </div>
-          <div className="mt-1 font-display text-2xl font-bold text-ink">{criticalCount}</div>
-        </div>
-        <div className="border border-line p-4">
-          <div className="flex items-center gap-2 text-sm font-semibold text-success">
-            <span className="h-2 w-2 rounded-full bg-success" /> Resolved
+          <div className="mt-1.5 flex items-center gap-2">
+            <span className="h-2.5 w-2.5 rounded-full bg-success" /> Resolved Issues: {resolvedCount}
           </div>
-          <div className="mt-1 font-display text-2xl font-bold text-ink">{resolvedCount}</div>
         </div>
       </div>
-
-      <button
-        onClick={onOpenMap}
-        className="mt-4 flex items-center justify-center gap-2 rounded-md border border-line py-2.5 text-sm font-semibold text-primary hover:bg-canvas"
-      >
-        <Map size={16} /> View on feedback map
-      </button>
     </Card>
   );
 }
@@ -300,7 +265,7 @@ function FilterSelect({ label, options, value, onChange, icon: Icon }) {
         <select
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          className={`w-full appearance-none rounded-md border border-line bg-surface py-2.5 pr-9 text-[15px] font-semibold text-ink outline-none focus:border-primary ${
+          className={`w-full appearance-none rounded-xl border border-line bg-surface py-2.5 pr-9 text-[15px] font-semibold text-ink outline-none focus:border-primary ${
             Icon ? "pl-9" : "pl-4"
           }`}
         >
@@ -317,14 +282,12 @@ function FilterSelect({ label, options, value, onChange, icon: Icon }) {
 }
 
 export default function CommunityFeedbackPage() {
-  const navigate = useNavigate();
   const [feedback, setFeedback] = useState([]);
   const [regions, setRegions] = useState(mockRegions);
   const [hazards, setHazards] = useState(mockHazardTypes);
   const [filters, setFilters] = useState({ regionId: "", hazardTypeId: "", severity: "All", range: "7" });
   const [status, setStatus] = useState("Loading feedback...");
   const [usingMock, setUsingMock] = useState(false);
-  const [resolvingId, setResolvingId] = useState(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -347,7 +310,7 @@ export default function CommunityFeedbackPage() {
     let isMounted = true;
 
     async function loadFeedback() {
-      setStatus("Refreshing feedback...");
+      setStatus("Refreshing /api/feedback...");
       const result = await api.getFeedback({
         regionId: filters.regionId,
         hazardTypeId: filters.hazardTypeId,
@@ -364,7 +327,7 @@ export default function CommunityFeedbackPage() {
 
       setFeedback(filteredData);
       setUsingMock((current) => current || result.usingMock);
-      setStatus(result.usingMock ? "Showing sample data" : "Up to date");
+      setStatus(result.usingMock ? "Backend unavailable - mock feedback active" : "Feedback synced from API");
     }
 
     loadFeedback();
@@ -376,34 +339,15 @@ export default function CommunityFeedbackPage() {
   async function handleProcess(item) {
     setStatus(`Processing feedback #${item.id}...`);
     try {
-      const result = await api.processFeedback(item.id, {
+      await api.processFeedback(item.id, {
         audio_local_path: item.audioFeedbackUrl,
         dialect_hint: item.dialect,
       });
-      const updated = result?.feedbackLog;
-      setFeedback((current) =>
-        current.map((row) => (row.id === item.id ? { ...row, ...updated, status: "processed" } : row)),
-      );
-      setStatus(`Processed feedback #${item.id}`);
+      setStatus(`Processed feedback #${item.id} through /api/feedback/:id/process`);
     } catch (error) {
       console.error(error);
       setUsingMock(true);
-      setFeedback((current) => current.map((row) => (row.id === item.id ? { ...row, status: "processed" } : row)));
-      setStatus("Could not process this feedback - marked processed locally");
-    }
-  }
-
-  async function handleResolve(item) {
-    setResolvingId(item.id);
-    try {
-      await api.updateFeedback(item.id, { status: "resolved" });
-      setStatus(`Marked feedback #${item.id} as resolved`);
-    } catch (error) {
-      console.error(error);
-      setStatus("Could not update this feedback online - marked resolved locally");
-    } finally {
-      setFeedback((current) => current.map((row) => (row.id === item.id ? { ...row, status: "resolved" } : row)));
-      setResolvingId(null);
+      setStatus("Feedback process endpoint failed - existing text retained");
     }
   }
 
@@ -414,10 +358,7 @@ export default function CommunityFeedbackPage() {
       <button className="rounded-lg p-1.5 text-ink hover:bg-surface" aria-label="Notifications">
         <Bell size={20} />
       </button>
-      <button
-        onClick={() => downloadFeedbackCsv(feedback)}
-        className="flex items-center gap-2 rounded-md bg-primary px-5 py-2.5 font-semibold text-white hover:brightness-110"
-      >
+      <button className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 font-semibold text-white hover:brightness-110">
         <FileText size={18} /> Export Report
       </button>
     </>
@@ -425,18 +366,19 @@ export default function CommunityFeedbackPage() {
 
   return (
     <AppLayout
+      user={{ name: "Admin User", detail: "admin@echoresilience.org", initials: "AU" }}
       topBar={<TopBar searchPlaceholder="Search feedback records..." actions={actions} />}
     >
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="font-display text-3xl font-bold tracking-tight text-ink">
+          <h1 className="font-display text-3xl font-extrabold tracking-tight text-primary">
             Community Feedback
           </h1>
           <p className="mt-1 text-muted">
-            {usingMock ? "Showing sample data until live records are available." : status}
+            {usingMock ? "Mock-assisted records are shown until the backend responds." : status}
           </p>
         </div>
-        <span className="inline-flex items-center gap-2 border border-success bg-surface px-4 py-2 text-sm font-semibold text-success">
+        <span className="inline-flex items-center gap-2 rounded-full bg-success-soft px-4 py-2 text-sm font-semibold text-success">
           <span className="h-2 w-2 rounded-full bg-success" />
           Live Reports: <span className="font-bold">{liveReports} Today</span>
         </span>
@@ -446,15 +388,9 @@ export default function CommunityFeedbackPage() {
 
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
         {feedback.map((item) => (
-          <FeedbackCard
-            key={item.id}
-            item={item}
-            onProcess={handleProcess}
-            onResolve={handleResolve}
-            resolving={resolvingId === item.id}
-          />
+          <FeedbackCard key={item.id} item={item} onProcess={handleProcess} />
         ))}
-        <HotspotCard feedback={feedback} onOpenMap={() => navigate("/feedback-map")} />
+        <HotspotCard feedback={feedback} />
       </div>
     </AppLayout>
   );

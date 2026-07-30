@@ -6,7 +6,7 @@ alerts before wiring it into FastAPI.
 
 Usage:
   export GEMINI_API_KEY="your-key-here"
-  pip install google-generativeai --break-system-packages
+  pip install google-genai --break-system-packages
   python test_pipeline.py            # live calls to Gemini
   python test_pipeline.py --dry-run  # exercises validation/Turkana logic
                                         without calling the API (no key needed)

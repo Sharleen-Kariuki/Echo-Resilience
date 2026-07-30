@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   Plus,
   Search,
@@ -12,13 +12,15 @@ import {
   History,
   TrendingUp,
   Languages,
+  CheckCircle2,
+  X,
 } from "lucide-react";
 import AppLayout from "../components/layout/AppLayout";
 import TopBar from "../components/layout/TopBar";
 import Card from "../components/ui/Card";
 import Badge, { statusTone } from "../components/ui/Badge";
 import Modal from "../components/ui/Modal";
-import { api, mockRegions } from "../lib/api";
+import { api, mockRegions, resolveAudioUrl } from "../lib/api";
 
 const PAGE_SIZE = 5;
 
@@ -70,7 +72,7 @@ function FilterSelect({ value, onChange, options, icon: Icon }) {
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className={`w-full appearance-none rounded-xl border border-line bg-surface py-2.5 pr-9 text-sm font-semibold text-ink outline-none focus:border-primary ${
+        className={`w-full appearance-none rounded-md border border-line bg-surface py-2.5 pr-9 text-sm font-semibold text-ink outline-none focus:border-primary ${
           Icon ? "pl-9" : "pl-4"
         }`}
       >
@@ -128,13 +130,13 @@ function SummaryCard({ icon: Icon, label, value, caption, dark }) {
   return (
     <Card className={`flex items-center gap-4 p-5 ${dark ? "border-none bg-ink text-white" : ""}`}>
       {Icon && (
-        <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${dark ? "bg-white/10 text-white" : "bg-primary-soft text-primary"}`}>
+        <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-md ${dark ? "bg-white/10 text-white" : "bg-primary-soft text-primary"}`}>
           <Icon size={20} />
         </div>
       )}
       <div className="min-w-0">
         <div className={`text-xs font-semibold tracking-wide ${dark ? "text-white/60" : "text-muted"}`}>{label}</div>
-        <div className={`font-display text-2xl font-extrabold ${dark ? "text-white" : "text-primary"}`}>{value}</div>
+        <div className={`font-display text-2xl font-bold ${dark ? "text-white" : "text-primary"}`}>{value}</div>
         {caption && <div className={`mt-0.5 text-xs ${dark ? "text-white/60" : "text-muted"}`}>{caption}</div>}
       </div>
     </Card>
@@ -185,13 +187,13 @@ function AlertDetailModal({ item, onClose }) {
         </div>
 
         <div className="grid grid-cols-2 gap-4">
-          <div className="rounded-xl bg-canvas p-4">
+          <div className="rounded-md bg-canvas p-4">
             <div className="text-xs font-semibold tracking-wide text-muted">CALLS PLACED</div>
-            <div className="font-display text-xl font-extrabold text-primary">{Number(detail.callsCount ?? 0).toLocaleString()}</div>
+            <div className="font-display text-xl font-bold text-primary">{Number(detail.callsCount ?? 0).toLocaleString()}</div>
           </div>
-          <div className="rounded-xl bg-canvas p-4">
+          <div className="rounded-md bg-canvas p-4">
             <div className="text-xs font-semibold tracking-wide text-muted">FEEDBACK RECEIVED</div>
-            <div className="font-display text-xl font-extrabold text-primary">{Number(detail.feedbackCount ?? 0).toLocaleString()}</div>
+            <div className="font-display text-xl font-bold text-primary">{Number(detail.feedbackCount ?? 0).toLocaleString()}</div>
           </div>
         </div>
 
@@ -210,7 +212,7 @@ function AlertDetailModal({ item, onClose }) {
         )}
 
         {detail.audioUrl && (
-          <audio controls src={detail.audioUrl} className="w-full">
+          <audio controls src={resolveAudioUrl(detail.audioUrl)} className="w-full">
             <track kind="captions" />
           </audio>
         )}
@@ -230,7 +232,7 @@ function AlertDetailModal({ item, onClose }) {
           </div>
         )}
 
-        {loading && <p className="text-xs text-muted">Refreshing from /api/alert-history/{item.id}...</p>}
+        {loading && <p className="text-xs text-muted">Refreshing…</p>}
       </div>
     </Modal>
   );
@@ -238,6 +240,8 @@ function AlertDetailModal({ item, onClose }) {
 
 export default function AlertHistoryPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [dispatchBanner, setDispatchBanner] = useState(location.state?.dispatched ? location.state : null);
   const [history, setHistory] = useState([]);
   const [regions, setRegions] = useState(mockRegions);
   const [search, setSearch] = useState("");
@@ -248,6 +252,15 @@ export default function AlertHistoryPage() {
   const [status, setStatus] = useState("Loading alert history...");
   const [usingMock, setUsingMock] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
+
+  useEffect(() => {
+    // Clear the navigation state right away so a refresh (or navigating back
+    // here later) doesn't re-show a stale "dispatched" banner.
+    if (location.state?.dispatched) {
+      navigate(location.pathname, { replace: true, state: null });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -263,9 +276,7 @@ export default function AlertHistoryPage() {
       setHistory(historyResult.data);
       setRegions(regionsResult.data.length ? regionsResult.data : mockRegions);
       setUsingMock(historyResult.usingMock || regionsResult.usingMock);
-      setStatus(
-        historyResult.usingMock ? "Backend unavailable - mock alert history active" : "Synced from /api/alert-history",
-      );
+      setStatus(historyResult.usingMock ? "Showing sample data" : "Up to date");
     }
 
     load();
@@ -327,7 +338,7 @@ export default function AlertHistoryPage() {
   const actions = (
     <button
       onClick={() => navigate("/alerts/new")}
-      className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 font-semibold text-white hover:brightness-110"
+      className="flex items-center gap-2 rounded-md bg-primary px-5 py-2.5 font-semibold text-white hover:brightness-110"
     >
       <Plus size={18} /> New Alert
     </button>
@@ -337,8 +348,23 @@ export default function AlertHistoryPage() {
     <AppLayout
       topBar={<TopBar title="Alert History" searchPlaceholder="Search alert logs..." actions={actions} />}
     >
+      {dispatchBanner && (
+        <div className="mb-5 flex items-start gap-3 border border-success bg-surface p-4 text-success">
+          <CheckCircle2 size={18} className="mt-0.5 shrink-0" />
+          <p className="flex-1 text-sm">
+            <span className="font-bold">{dispatchBanner.hazardName}</span> dispatched in{" "}
+            <span className="font-bold">{dispatchBanner.dialect}</span> to{" "}
+            <span className="font-bold">{Number(dispatchBanner.reachableCount ?? 0).toLocaleString()} registered numbers</span>{" "}
+            in <span className="underline">{dispatchBanner.regionName}</span>.
+          </p>
+          <button onClick={() => setDispatchBanner(null)} aria-label="Dismiss" className="shrink-0 text-success hover:opacity-70">
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
       <Card className="mb-5 flex flex-wrap items-center gap-3 p-4">
-        <label className="flex min-w-56 flex-1 items-center gap-2.5 rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-muted focus-within:border-primary">
+        <label className="flex min-w-56 flex-1 items-center gap-2.5 rounded-md border border-line bg-canvas px-3.5 py-2.5 text-muted focus-within:border-primary">
           <Search size={16} />
           <input
             value={search}
@@ -382,7 +408,7 @@ export default function AlertHistoryPage() {
               setDate(event.target.value);
               setPage(1);
             }}
-            className="w-full rounded-xl border border-line bg-surface py-2.5 pl-9 pr-3 text-sm font-semibold text-ink outline-none focus:border-primary"
+            className="w-full rounded-md border border-line bg-surface py-2.5 pl-9 pr-3 text-sm font-semibold text-ink outline-none focus:border-primary"
           />
         </div>
       </Card>

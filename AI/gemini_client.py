@@ -9,7 +9,7 @@ extract call. Handles:
   - Basic validation against the expected schema and SMS length rule
   - Retrying once on a malformed response before giving up
 
-Requires: pip install google-generativeai --break-system-packages
+Requires: pip install google-genai --break-system-packages
 Set your key: export GEMINI_API_KEY="your-key-here"
 """
 
@@ -67,17 +67,18 @@ def _validate_response(data: dict) -> list[str]:
     return problems
 
 
-def call_gemini(system_prompt: str, user_prompt: str, model: str = "gemini-2.5-flash") -> str:
+def call_gemini(system_prompt: str, user_prompt: str, model: str = "gemini-flash-latest") -> str:
     """
     Calls the Gemini API and returns the raw text response.
     Isolated into its own function so it's easy to swap models or mock in tests.
     """
     try:
-        import google.generativeai as genai
+        from google import genai
+        from google.genai import types
     except ImportError as e:
         raise AlertProcessingError(
-            "google-generativeai not installed. Run: "
-            "pip install google-generativeai --break-system-packages"
+            "google-genai not installed. Run: "
+            "pip install google-genai --break-system-packages"
         ) from e
 
     api_key = os.environ.get("GEMINI_API_KEY")
@@ -87,11 +88,15 @@ def call_gemini(system_prompt: str, user_prompt: str, model: str = "gemini-2.5-f
             "Get a key from https://aistudio.google.com/apikey and export it."
         )
 
-    genai.configure(api_key=api_key)
-    gen_model = genai.GenerativeModel(model_name=model, system_instruction=system_prompt)
-    response = gen_model.generate_content(
-        user_prompt,
-        generation_config={"temperature": 0.3, "response_mime_type": "application/json"},
+    client = genai.Client(api_key=api_key)
+    response = client.models.generate_content(
+        model=model,
+        contents=user_prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=system_prompt,
+            temperature=0.3,
+            response_mime_type="application/json",
+        ),
     )
     return response.text
 
@@ -151,11 +156,12 @@ def transcribe_feedback(audio_file_path: str, dialect_hint: str | None = None) -
       { "transcription_text": "...", "translated_text": "...", "hazard_type": "..." }
     """
     try:
-        import google.generativeai as genai
+        from google import genai
+        from google.genai import types
     except ImportError as e:
         raise AlertProcessingError(
-            "google-generativeai not installed. Run: "
-            "pip install google-generativeai --break-system-packages"
+            "google-genai not installed. Run: "
+            "pip install google-genai --break-system-packages"
         ) from e
 
     api_key = os.environ.get("GEMINI_API_KEY")
@@ -181,8 +187,7 @@ def transcribe_feedback(audio_file_path: str, dialect_hint: str | None = None) -
     except Exception as e:
         raise AlertProcessingError(f"Failed to read audio file: {e}")
 
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel(model_name="gemini-2.5-flash")
+    client = genai.Client(api_key=api_key)
 
     system_prompt = (
         "You are an audio processing agent for EchoResilience. Your task is to transcribe, "
@@ -209,12 +214,17 @@ def transcribe_feedback(audio_file_path: str, dialect_hint: str | None = None) -
     )
 
     try:
-        response = model.generate_content(
-            [
-                {"mime_type": mime_type, "data": audio_bytes},
-                prompt
+        response = client.models.generate_content(
+            model="gemini-flash-latest",
+            contents=[
+                types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
+                prompt,
             ],
-            generation_config={"temperature": 0.2, "response_mime_type": "application/json"},
+            config=types.GenerateContentConfig(
+                system_instruction=system_prompt,
+                temperature=0.2,
+                response_mime_type="application/json",
+            ),
         )
         cleaned = _strip_json_fences(response.text)
         return json.loads(cleaned)

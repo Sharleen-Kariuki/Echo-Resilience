@@ -1,11 +1,8 @@
-// Reused everywhere: CRITICAL / RESOLVED / ONGOING / MODERATE / HIGH / LIVE ...
-// One component, four tones. Pass `tone` directly, or use statusTone() to map
-// a status string to the right tone.
-
 const TONES = {
-  red: "bg-danger-soft text-danger",
-  green: "bg-success-soft text-success",
-  neutral: "bg-chip text-chip-ink",
+  red: "border-danger/30 bg-danger-soft text-danger",
+  green: "border-success/30 bg-success-soft text-success",
+  neutral: "border-line bg-chip text-chip-ink",
+  clay: "border-clay/30 bg-clay-soft text-clay",
 };
 
 export function statusTone(status) {
@@ -17,7 +14,7 @@ export function statusTone(status) {
     LIVE: "green",
     ONGOING: "neutral",
     MONITORING: "neutral",
-    HIGH: "neutral",
+    HIGH: "clay",
     DELIVERED: "green",
     DISPATCHED: "green",
     "IN PROGRESS": "neutral",
@@ -30,7 +27,7 @@ export function statusTone(status) {
 export default function Badge({ tone = "neutral", children, className = "" }) {
   return (
     <span
-      className={`inline-block rounded-full px-3 py-1 text-xs font-bold tracking-wide ${TONES[tone]} ${className}`}
+      className={`inline-block border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${TONES[tone]} ${className}`}
     >
       {children}
     </span>

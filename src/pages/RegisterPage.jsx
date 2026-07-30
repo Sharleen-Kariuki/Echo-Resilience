@@ -35,7 +35,8 @@ export default function RegisterPage() {
       navigate("/", { replace: true });
     } catch (err) {
       console.error(err);
-      setError(err.message || "Could not create this account.");
+      const isTechnical = !err.message || /request failed|failed to fetch|networkerror/i.test(err.message);
+      setError(isTechnical ? "Couldn't create this account right now. Please try again." : err.message);
     } finally {
       setSubmitting(false);
     }
@@ -63,7 +64,7 @@ export default function RegisterPage() {
             value={fullName}
             onChange={(event) => setFullName(event.target.value)}
             placeholder="Jane Doe"
-            className="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-primary"
+            className="w-full rounded-md border border-line bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-primary"
           />
         </label>
 
@@ -75,8 +76,8 @@ export default function RegisterPage() {
             autoComplete="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            placeholder="admin@echoresilience.gov"
-            className="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-primary"
+            placeholder="you@example.com"
+            className="w-full rounded-md border border-line bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-primary"
           />
         </label>
 
@@ -92,7 +93,7 @@ export default function RegisterPage() {
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               placeholder="••••••••••••"
-              className="w-full rounded-xl border border-line bg-canvas py-2.5 pl-9 pr-9 text-sm text-ink outline-none focus:border-primary"
+              className="w-full rounded-md border border-line bg-canvas py-2.5 pl-9 pr-9 text-sm text-ink outline-none focus:border-primary"
             />
             <button
               type="button"
@@ -114,7 +115,7 @@ export default function RegisterPage() {
             value={confirmPassword}
             onChange={(event) => setConfirmPassword(event.target.value)}
             placeholder="••••••••••••"
-            className="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-primary"
+            className="w-full rounded-md border border-line bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-primary"
           />
         </label>
 
@@ -123,7 +124,7 @@ export default function RegisterPage() {
           <select
             value={role}
             onChange={(event) => setRole(event.target.value)}
-            className="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-primary"
+            className="w-full rounded-md border border-line bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none focus:border-primary"
           >
             {ROLE_OPTIONS.map((option) => (
               <option key={option.id} value={option.id}>
@@ -138,7 +139,7 @@ export default function RegisterPage() {
         <button
           type="submit"
           disabled={submitting}
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 font-semibold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+          className="flex w-full items-center justify-center gap-2 rounded-md bg-primary py-3 font-semibold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {submitting ? "Creating account..." : "Create Account"} <ArrowRight size={16} />
         </button>

@@ -11,6 +11,8 @@ Design goals:
 - Few-shot examples anchor tone/length (SMS-safe, IVR-readable, no jargon).
 """
 
+import json
+
 # Languages Gemini will attempt directly. Turkana is deliberately excluded —
 # see turkana_templates.py for why and how it's handled instead.
 SUPPORTED_AI_DIALECTS = ["Somali", "Oromo", "Amharic", "Swahili"]
@@ -52,57 +54,44 @@ Return exactly this JSON shape:
   "translation_confidence": 0.0
 }"""
 
-# Few-shot examples anchor style and length. Keep these short and consistent
-# with the system prompt's rules so the model doesn't drift on longer alerts.
-FEW_SHOT_EXAMPLES = [
-    {
-        "raw_alert": (
-            "Heavy convective precipitation exceeding 180 mm is expected across the "
-            "Turkana Basin within the next 24 hours. Significant flash flooding is probable."
+# Single few-shot example anchoring style, length, and JSON shape. Previously
+# two full examples were rebuilt and appended to the *user* prompt on every
+# call (resending ~250-350 extra tokens of unchanging content per request,
+# including on every retry). One well-chosen example plus the explicit rules
+# already in SYSTEM_PROMPT is enough to anchor format; if translation quality
+# drifts for a specific dialect/urgency combo, add a second example back
+# rather than restoring both by default.
+FEW_SHOT_EXAMPLE = {
+    "raw_alert": (
+        "Heavy convective precipitation exceeding 180 mm is expected across the "
+        "Turkana Basin within the next 24 hours. Significant flash flooding is probable."
+    ),
+    "target_dialect": "Somali",
+    "response": {
+        "hazard_type": "Flood",
+        "urgency": "Critical",
+        "recommended_action": "Move people and livestock to higher ground now.",
+        "simplified_en": (
+            "Warning: very heavy rain is coming tomorrow. Flash floods are likely. "
+            "Move your family and animals to higher ground now. Avoid crossing rivers."
+        ),
+        "translated_text": (
+            "Digniin: roob aad u xoog badan ayaa soo socda berri. Daadad degdeg ah "
+            "ayaa suurtagal ah. Hadda u guuri qoyskaaga iyo xoolahaaga meel sare. "
+            "Ha ka gudbin webiyada."
         ),
         "target_dialect": "Somali",
-        "response": {
-            "hazard_type": "Flood",
-            "urgency": "Critical",
-            "recommended_action": "Move people and livestock to higher ground now.",
-            "simplified_en": (
-                "Warning: very heavy rain is coming tomorrow. Flash floods are likely. "
-                "Move your family and animals to higher ground now. Avoid crossing rivers."
-            ),
-            "translated_text": (
-                "Digniin: roob aad u xoog badan ayaa soo socda berri. Daadad degdeg ah "
-                "ayaa suurtagal ah. Hadda u guuri qoyskaaga iyo xoolahaaga meel sare. "
-                "Ha ka gudbin webiyada."
-            ),
-            "target_dialect": "Somali",
-            "translation_confidence": 0.85,
-        },
+        "translation_confidence": 0.85,
     },
-    {
-        "raw_alert": (
-            "Below-average cumulative rainfall (less than 40% of the long-term mean) has "
-            "been recorded across Marsabit County over the past two rainfall seasons, "
-            "indicating high probability of severe pasture and water scarcity."
-        ),
-        "target_dialect": "Oromo",
-        "response": {
-            "hazard_type": "Drought",
-            "urgency": "High",
-            "recommended_action": "Move herds toward known water points early and reduce herd size if possible.",
-            "simplified_en": (
-                "Very little rain has fallen in Marsabit for two seasons. Grass and water "
-                "will be scarce soon. Move animals toward water sources early and plan ahead."
-            ),
-            "translated_text": (
-                "Marsabit keessatti waggoota lama darban keessa bokkaan xiqqaa roobe. "
-                "Marga fi bishaan dhiphachuu danda'a. Beeyladoota gara bishaanitti dafanii "
-                "geeffachuu fi karoora dursa qabaachuu barbaachisa."
-            ),
-            "target_dialect": "Oromo",
-            "translation_confidence": 0.8,
-        },
-    },
-]
+}
+
+# Built once at import time (not per-call) since the example never changes.
+# json.dumps also tokenizes more compactly than a Python dict repr.
+_FEW_SHOT_TEXT = (
+    f"\n---\nEXAMPLE INPUT:\nraw_alert: {FEW_SHOT_EXAMPLE['raw_alert']}\n"
+    f"target_dialect: {FEW_SHOT_EXAMPLE['target_dialect']}\n"
+    f"EXAMPLE OUTPUT:\n{json.dumps(FEW_SHOT_EXAMPLE['response'])}\n"
+)
 
 
 def build_messages(raw_alert: str, target_dialect: str, severity_level: str | None = None) -> dict:
@@ -119,19 +108,11 @@ def build_messages(raw_alert: str, target_dialect: str, severity_level: str | No
             f"For Turkana, use turkana_templates.py instead."
         )
 
-    few_shot_text = ""
-    for ex in FEW_SHOT_EXAMPLES:
-        few_shot_text += (
-            f"\n---\nEXAMPLE INPUT:\nraw_alert: {ex['raw_alert']}\n"
-            f"target_dialect: {ex['target_dialect']}\n"
-            f"EXAMPLE OUTPUT:\n{ex['response']}\n"
-        )
-
     severity_hint = f"\nAdmin-tagged severity level: {severity_level}" if severity_level else ""
 
     user_prompt = (
-        f"Here are worked examples of the expected input/output format:\n"
-        f"{few_shot_text}\n"
+        f"Here is a worked example of the expected input/output format:\n"
+        f"{_FEW_SHOT_TEXT}\n"
         f"---\nNow process this new alert.\n\n"
         f"raw_alert: {raw_alert}\n"
         f"target_dialect: {target_dialect}"
