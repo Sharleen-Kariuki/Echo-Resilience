@@ -1,0 +1,25 @@
+{
+  "name": "echo-resilience-database",
+  "version": "1.0.0",
+  "description": "Database connection and Prisma ORM client for Echo Resilience",
+  "type": "module",
+  "main": "src/client.js",
+  "scripts": {
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio",
+    "prisma:seed": "node prisma/seed.js",
+    "test-connection": "node src/test-connection.js"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.16.1",
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "prisma": "^5.16.1"
+  }
+}
