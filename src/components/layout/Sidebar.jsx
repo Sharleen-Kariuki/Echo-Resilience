@@ -51,7 +51,7 @@ export default function Sidebar({ user: userOverride }) {
         <Logo size={36} />
         <div>
           <div className="font-display text-lg font-semibold leading-none tracking-tight text-sidebar-ink">
-            Echo<span className="text-primary">Resilience</span>
+            Echo<span className="text-sidebar-muted">Resilience</span>
           </div>
           <div className="mt-1.5 text-[11px] font-medium uppercase tracking-[0.14em] text-sidebar-muted">
             Climate Admin
@@ -69,7 +69,7 @@ export default function Sidebar({ user: userOverride }) {
             className={({ isActive }) =>
               `flex items-center gap-3.5 border-l-2 px-4 py-2.5 text-[15px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
                 isActive
-                  ? "border-primary font-semibold text-sidebar-ink"
+                  ? "border-sidebar-ink font-semibold text-sidebar-ink"
                   : "border-transparent text-sidebar-muted hover:border-sidebar-line hover:text-sidebar-ink"
               }`
             }

@@ -210,6 +210,14 @@ export default function ClimateAlertsPage() {
   const [dialect, setDialect] = useState(SUPPORTED_DIALECTS[0]);
   const [currentAlertId, setCurrentAlertId] = useState(null);
   const [preview, setPreview] = useState(null);
+  // Caches a finished simplify/translate(/audio) result per dialect for the
+  // current draft, so re-clicking a dialect pill reuses it instead of paying
+  // for another Gemini call. Cleared whenever the inputs that feed the AI
+  // pipeline (description, hazard type, severity) change.
+  const [previewCache, setPreviewCache] = useState({});
+  const skipCacheClear = useRef(true);
+  const [translateAllRunning, setTranslateAllRunning] = useState(false);
+  const [translateAllProgress, setTranslateAllProgress] = useState({ completed: 0, total: 0, currentDialect: "" });
   const [processError, setProcessError] = useState(null);
   const [audioUrl, setAudioUrl] = useState("");
   const [audioError, setAudioError] = useState(null);
@@ -264,6 +272,16 @@ export default function ClimateAlertsPage() {
       isMounted = false;
     };
   }, []);
+
+  // The cached previews are only valid for the description/hazard/severity
+  // combination they were generated from — invalidate them if any change.
+  useEffect(() => {
+    if (skipCacheClear.current) {
+      skipCacheClear.current = false;
+      return;
+    }
+    setPreviewCache({});
+  }, [description, hazardTypeId, severity]);
 
   const selectedRegions = useMemo(
     () => allRegions.filter((region) => regionIds.includes(region.id)),
@@ -326,6 +344,8 @@ export default function ClimateAlertsPage() {
   // language switch. Returns whether it actually produced a playable file —
   // callers use that to decide what status text to show. Progress is managed
   // by the caller since it means something different in each context.
+  // Returns the resolved audio URL on success (so callers can cache it), or
+  // null on failure.
   async function generateAudioFor(alertId, targetDialect, translatedText) {
     try {
       if (!translatedText) {
@@ -337,18 +357,41 @@ export default function ClimateAlertsPage() {
       if (!audioPath) {
         throw new Error(audioNote || "Audio generation did not return an audio file for this dialect.");
       }
-      setAudioUrl(resolveAudioUrl(audioPath));
+      const resolvedUrl = resolveAudioUrl(audioPath);
+      setAudioUrl(resolvedUrl);
       setAudioError(null);
-      return true;
+      return resolvedUrl;
     } catch (error) {
       console.error(error);
       setAudioUrl("");
       setAudioError(`Audio generation failed: ${friendlyError(error.message) ?? "unknown error"}`);
-      return false;
+      return null;
     }
   }
 
   async function runSimplifyTranslate(targetDialect) {
+    // Already generated this dialect for the current description/hazard/
+    // severity combo this session — reuse it instead of paying for another
+    // Gemini call (system prompt + few-shot examples + generation cost).
+    const cached = previewCache[targetDialect];
+    if (cached) {
+      setProcessError(null);
+      setAudioError(null);
+      setPreview({
+        simplifiedText: cached.simplifiedText,
+        translatedText: cached.translatedText,
+        dialect: targetDialect,
+        needsHumanReview: cached.needsHumanReview,
+      });
+      setAudioUrl(cached.audioUrl || "");
+      setStatus(
+        cached.needsHumanReview
+          ? `Loaded cached preview for ${targetDialect} (unverified — audio unavailable)`
+          : `Loaded cached preview for ${targetDialect}${cached.audioUrl ? " with audio" : ""}`,
+      );
+      return;
+    }
+
     setIsSubmitting(true);
     setProcessError(null);
     setAudioUrl("");
@@ -370,20 +413,28 @@ export default function ClimateAlertsPage() {
       // Unverified text (e.g. Turkana fallback) never gets TTS server-side —
       // don't bother trying, the audio panel already explains why.
       if (needsHumanReview) {
+        setPreviewCache((current) => ({
+          ...current,
+          [targetDialect]: { simplifiedText, translatedText, needsHumanReview, audioUrl: "" },
+        }));
         setStatus(`Processed alert AL-${String(alertId).padStart(4, "0")} for ${targetDialect} (unverified — audio unavailable)`);
         return;
       }
 
       setStatus(`Generating audio for ${targetDialect}...`);
       audioProgress.start();
-      const audioOk = await generateAudioFor(alertId, targetDialect, translatedText);
-      if (audioOk) {
+      const generatedAudioUrl = await generateAudioFor(alertId, targetDialect, translatedText);
+      if (generatedAudioUrl) {
         audioProgress.finish();
       } else {
         audioProgress.reset();
       }
+      setPreviewCache((current) => ({
+        ...current,
+        [targetDialect]: { simplifiedText, translatedText, needsHumanReview, audioUrl: generatedAudioUrl || "" },
+      }));
       setStatus(
-        audioOk
+        generatedAudioUrl
           ? `Processed alert AL-${String(alertId).padStart(4, "0")} for ${targetDialect} with audio ready`
           : `Processed alert AL-${String(alertId).padStart(4, "0")} for ${targetDialect} (audio generation failed)`,
       );
@@ -416,6 +467,34 @@ export default function ClimateAlertsPage() {
     await runSimplifyTranslate(item);
   }
 
+  // Runs simplify/translate(+audio) for every supported dialect, one at a
+  // time. Sequential on purpose: firing all of them in parallel reliably
+  // trips Gemini's free-tier rate limit (see friendlyError above), so each
+  // dialect waits its turn with a short pause in between.
+  async function handleTranslateAll() {
+    if (translateAllRunning || isSubmitting) return;
+    if (!description || !hazardTypeId || regionIds.length === 0) {
+      setStatus("Add a description, hazard type, and at least one affected region before translating all languages.");
+      return;
+    }
+
+    setTranslateAllRunning(true);
+    setDispatchError(null);
+
+    for (let i = 0; i < dialects.length; i += 1) {
+      const targetDialect = dialects[i];
+      setTranslateAllProgress({ completed: i, total: dialects.length, currentDialect: targetDialect });
+      await runSimplifyTranslate(targetDialect);
+      if (i < dialects.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+    }
+
+    setTranslateAllProgress({ completed: dialects.length, total: dialects.length, currentDialect: "" });
+    setTranslateAllRunning(false);
+    setStatus(`Translated all ${dialects.length} languages.`);
+  }
+
   async function handleAudio() {
     setIsSubmitting(true);
     setAudioError(null);
@@ -423,14 +502,17 @@ export default function ClimateAlertsPage() {
     setStatus("Generating alert audio...");
     try {
       const alertId = await ensureAlert();
-      const ok = await generateAudioFor(alertId, dialect, preview?.translatedText);
-      if (ok) {
+      const generatedAudioUrl = await generateAudioFor(alertId, dialect, preview?.translatedText);
+      if (generatedAudioUrl) {
         audioProgress.finish();
+        setPreviewCache((current) =>
+          current[dialect] ? { ...current, [dialect]: { ...current[dialect], audioUrl: generatedAudioUrl } } : current,
+        );
       } else {
         audioProgress.reset();
       }
       setStatus(
-        ok
+        generatedAudioUrl
           ? `Audio ready for ${dialect}`
           : "Could not generate audio - see error below.",
       );
@@ -607,7 +689,7 @@ export default function ClimateAlertsPage() {
 
               <button
                 onClick={handleProcess}
-                disabled={isSubmitting || !description || !hazardTypeId || regionIds.length === 0}
+                disabled={isSubmitting || translateAllRunning || !description || !hazardTypeId || regionIds.length === 0}
                 className="relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-md bg-primary py-3.5 font-semibold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {processProgress.percent > 0 && (
@@ -633,14 +715,14 @@ export default function ClimateAlertsPage() {
             </Card>
 
             <Card className="border-dashed bg-canvas p-7">
-              <div className="mb-5 flex items-center justify-between">
-                <h2 className="font-display text-xl font-bold">Preview</h2>
-                <div className="flex gap-1 border border-line bg-canvas p-1">
+              <div className="mb-5">
+                <h2 className="mb-3 font-display text-xl font-bold">Preview</h2>
+                <div className="flex flex-wrap gap-1 border border-line bg-canvas p-1">
                   {dialects.map((item) => (
                     <button
                       key={item}
                       onClick={() => handleDialectClick(item)}
-                      disabled={isSubmitting}
+                      disabled={isSubmitting || translateAllRunning}
                       className={`px-3 py-1 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                         dialect === item ? "bg-surface text-primary" : "text-muted hover:text-ink"
                       }`}
@@ -649,6 +731,30 @@ export default function ClimateAlertsPage() {
                     </button>
                   ))}
                 </div>
+              </div>
+
+              <div className="mb-5">
+                <button
+                  type="button"
+                  onClick={handleTranslateAll}
+                  disabled={isSubmitting || translateAllRunning || !description || !hazardTypeId || regionIds.length === 0}
+                  className="mb-2 flex items-center gap-2 rounded-md border border-primary px-4 py-2 text-xs font-bold tracking-wide text-primary hover:bg-primary-soft/40 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {translateAllRunning ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Languages size={14} />
+                  )}
+                  {translateAllRunning
+                    ? `Translating ${translateAllProgress.completed + 1} of ${translateAllProgress.total}: ${translateAllProgress.currentDialect}...`
+                    : "Translate All Languages"}
+                </button>
+                {translateAllRunning && (
+                  <ProgressBar
+                    percent={(translateAllProgress.completed / translateAllProgress.total) * 100}
+                    label="Translating all languages"
+                  />
+                )}
               </div>
 
               <div className="rounded-md border border-line bg-surface p-6">
@@ -705,7 +811,7 @@ export default function ClimateAlertsPage() {
                   ) : (
                     <button
                       onClick={handleAudio}
-                      disabled={isSubmitting || !preview}
+                      disabled={isSubmitting || translateAllRunning || !preview}
                       className="inline-flex items-center gap-2 rounded-md border border-line px-4 py-2.5 hover:bg-canvas disabled:opacity-60"
                     >
                       <Volume2 size={16} className="text-primary" />
@@ -726,7 +832,7 @@ export default function ClimateAlertsPage() {
                 {audioError && <p className="mt-3 text-sm text-danger">{audioError}</p>}
               </div>
 
-              <div className="mt-4 flex items-start gap-3 border border-success/25 bg-success-soft p-4 text-success">
+              <div className="mt-4 flex items-start gap-3 border border-success bg-surface p-4 text-success">
                 <MessageSquare size={18} className="mt-0.5 shrink-0" />
                 <p className="text-sm">
                   This will reach <span className="font-bold">{reachableCount} registered numbers</span>{" "}
@@ -758,14 +864,14 @@ export default function ClimateAlertsPage() {
             <div className="flex gap-3">
               <button
                 onClick={handleSaveDraft}
-                disabled={isSubmitting || !description || !hazardTypeId}
+                disabled={isSubmitting || translateAllRunning || !description || !hazardTypeId}
                 className="rounded-md border border-primary bg-surface px-6 py-3 font-semibold text-primary hover:bg-primary-soft/40 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Save {selectedHazard?.name ?? "Alert"} Draft
               </button>
               <button
                 onClick={handleDispatch}
-                disabled={isSubmitting || !description || !hazardTypeId || regionIds.length === 0}
+                disabled={isSubmitting || translateAllRunning || !description || !hazardTypeId || regionIds.length === 0}
                 className="flex items-center gap-2 rounded-md bg-primary px-6 py-3 font-semibold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Send size={18} /> Send to Community

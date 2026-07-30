@@ -8,10 +8,10 @@
 @theme {
   --color-canvas: #f2f2ef;
   --color-surface: #ffffff;
-  --color-sidebar: #17161a;
+  --color-sidebar: #163829;
   --color-sidebar-ink: #f2f2f0;
-  --color-sidebar-muted: #96959b;
-  --color-sidebar-line: #2a2a2f;
+  --color-sidebar-muted: #93ab9e;
+  --color-sidebar-line: #234937;
 
   --color-primary: #1f4d3a;
   --color-primary-soft: #dcebe3;
