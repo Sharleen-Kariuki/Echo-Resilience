@@ -55,8 +55,8 @@ Echo-Resilience/
 Install dependencies across all Node packages:
 
 ```bash
-# 1. Root Frontend dependencies
-npm install
+# 1. Frontend dependencies
+cd frontend && npm install && cd ..
 
 # 2. Main Backend dependencies
 cd backend && npm install && cd ..
@@ -194,6 +194,7 @@ Open 3 terminal sessions to run each component concurrently:
 #### Terminal 1 — Frontend Server (Vite)
 ```bash
 # Runs on http://localhost:5173
+cd frontend
 npm run dev
 ```
 
