@@ -159,7 +159,22 @@ router.post('/:id/dispatch', authenticate, requireAdmin, async (req, res) => {
       include: { region: { select: { id: true, name: true } } },
     });
 
-    res.json({ historyRecord, aiResult });
+    // 4. Trigger voice/SMS broadcast via IVR module
+    let broadcastResult = null;
+    try {
+      const ivrUrl = process.env.IVR_SERVICE_URL || 'http://localhost:5002';
+      const ivrRes = await fetch(`${ivrUrl}/api/ivr/history/${historyRecord.id}/broadcast`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ regionId: Number(regionId) }),
+      });
+      broadcastResult = await ivrRes.json();
+      console.log('[IVR Dispatch Result]', broadcastResult);
+    } catch (ivrErr) {
+      console.error('[IVR Dispatch Error]', ivrErr.message);
+    }
+
+    res.json({ historyRecord, aiResult, broadcastResult });
 
   } catch (err) {
     // Mark as failed so the dashboard can surface it for retry

@@ -80,8 +80,9 @@ export async function postVoiceCallback(req: Request, res: Response, next: NextF
     }
 
     if (attempt.alertHistory.audioUrl) {
-      const audioUrl = new URL(attempt.alertHistory.audioUrl, env.mainApiBaseUrl).toString();
-      return res.status(200).send(buildPlayResponse(audioUrl));
+      const audioUrlObj = new URL(attempt.alertHistory.audioUrl, env.mainApiBaseUrl);
+      audioUrlObj.searchParams.set("ngrok-skip-browser-warning", "true");
+      return res.status(200).send(buildPlayResponse(audioUrlObj.toString()));
     }
 
     return res.status(200).send(buildSayResponse(buildWarningMessage(attempt.alertHistory)));

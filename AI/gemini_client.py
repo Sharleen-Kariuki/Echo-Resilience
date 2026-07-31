@@ -16,6 +16,22 @@ Set your key: export GEMINI_API_KEY="your-key-here"
 import os
 import json
 import re
+import pathlib
+
+# ─── Load AI/.env early (zero dependencies) ──────────────────────────────────
+def _load_dotenv():
+    env_file = pathlib.Path(__file__).parent / '.env'
+    if not env_file.exists():
+        return
+    for raw in env_file.read_text(encoding='utf-8').splitlines():
+        line = raw.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, _, val = line.partition('=')
+        val = val.strip().strip('"').strip("'")
+        os.environ.setdefault(key.strip(), val)
+
+_load_dotenv()
 
 from prompt_builder import build_messages, SUPPORTED_AI_DIALECTS
 

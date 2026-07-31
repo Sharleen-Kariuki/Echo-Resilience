@@ -1,12 +1,39 @@
-import { spawn } from 'child_process';
-import path from 'path';
+import { spawn }        from 'child_process';
+import { readFileSync } from 'fs';
+import path              from 'path';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 
 // Absolute path to the ai/ directory (backend/src/services → up 3 → Echo-Resilience → ai)
-const AI_DIR = path.resolve(__dirname, '../../../', 'ai');
+const AI_DIR = path.resolve(__dirname, '../../../', 'AI');
+
+/**
+ * Read GEMINI_API_KEY (and any other vars) from AI/.env so the Python
+ * subprocess has them even though backend/dotenv only loads backend/.env.
+ * Uses a simple line-by-line parser — no extra npm dependency needed.
+ */
+function loadAiEnvVars() {
+  try {
+    const content = readFileSync(path.join(AI_DIR, '.env'), 'utf-8');
+    const vars = {};
+    for (const raw of content.split(/\r?\n/)) {
+      const line = raw.trim();
+      if (!line || line.startsWith('#') || !line.includes('=')) continue;
+      const eqIdx = line.indexOf('=');
+      const key   = line.slice(0, eqIdx).trim();
+      const val   = line.slice(eqIdx + 1).trim().replace(/^"|"$/g, '').replace(/^'|'$/g, '');
+      if (key) vars[key] = val;
+    }
+    return vars;
+  } catch {
+    // If the file is missing, fall back gracefully — error surfaces in the subprocess
+    return {};
+  }
+}
+
+const AI_ENV_VARS = loadAiEnvVars();
 
 /**
  * Spawns the Python AI bridge as a child process.
@@ -27,7 +54,8 @@ function callPythonBridge(payload) {
     const proc = spawn(pythonCmd, ['api_bridge.py'], {
       cwd: AI_DIR,
       env: {
-        ...process.env, // Pass GEMINI_API_KEY and any other env vars through
+        ...process.env,  // inherit backend env
+        ...AI_ENV_VARS,  // overlay AI/.env vars (includes GEMINI_API_KEY)
         // Windows defaults a piped subprocess's stdout/stderr to the console
         // codepage (cp1252), which can't encode non-Latin scripts like
         // Amharic — force real UTF-8 so translated text doesn't crash on write.

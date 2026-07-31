@@ -18,8 +18,28 @@ Output schema:
   On error: { "error": "message" } — exit code 1
 """
 
+import os
 import sys
 import json
+import pathlib
+
+# ─── Load AI/.env early (zero dependencies) ──────────────────────────────────
+# When called as a subprocess by Node, the backend now injects AI/.env vars
+# directly. When run standalone (e.g. python api_bridge.py) this ensures the
+# key is still available without requiring a manual `export` first.
+def _load_dotenv():
+    env_file = pathlib.Path(__file__).parent / '.env'
+    if not env_file.exists():
+        return
+    for raw in env_file.read_text(encoding='utf-8').splitlines():
+        line = raw.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, _, val = line.partition('=')
+        val = val.strip().strip('"').strip("'")
+        os.environ.setdefault(key.strip(), val)
+
+_load_dotenv()
 
 # ─── Redirect stdout to stderr BEFORE importing AI modules ───────────────────
 # The AI modules use print() for rate-limit warnings, progress messages, etc.
