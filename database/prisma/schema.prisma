@@ -35,6 +35,7 @@ model Region {
   latitude     Float?
   longitude    Float?
   communities  Community[]
+  members      Member[]
   alertRegions AlertRegion[]
   alertHistory AlertHistory[]
   feedbackLogs FeedbackLog[]
@@ -57,6 +58,8 @@ model Community {
   id               Int      @id @default(autoincrement())
   name             String   @db.VarChar(150)
   totalRegistered  Int      @default(0) @map("total_registered")
+  type             String?  @db.VarChar(50)
+  leaderPhone      String?  @map("leader_phone") @db.VarChar(20)
   regionId         Int      @map("region_id")
   region           Region   @relation(fields: [regionId], references: [id], onDelete: Restrict)
   registrationDate DateTime @default(now()) @map("registration_date") @db.Date
@@ -64,9 +67,30 @@ model Community {
   status           String?  @default("active") @db.VarChar(50)
   actions          String?  @db.Text
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+  members          Member[]
 
   @@index([regionId], map: "idx_communities_region")
   @@map("communities")
+}
+
+// Individual recipients registered through the Communities page.
+model Member {
+  id          Int        @id @default(autoincrement())
+  fullName    String     @map("full_name") @db.VarChar(255)
+  phone       String     @unique @db.VarChar(20)
+  language    String     @db.VarChar(100)
+  locality    String?    @db.VarChar(150)
+  source      String?    @db.VarChar(100)
+  status      String     @default("active") @db.VarChar(50)
+  regionId    Int        @map("region_id")
+  region      Region     @relation(fields: [regionId], references: [id], onDelete: Restrict)
+  communityId Int?       @map("community_id")
+  community   Community? @relation(fields: [communityId], references: [id], onDelete: SetNull)
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([regionId], map: "idx_members_region")
+  @@index([communityId], map: "idx_members_community")
+  @@map("members")
 }
 
 // 5. ALERTS TABLE

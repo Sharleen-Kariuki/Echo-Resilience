@@ -112,6 +112,8 @@ All endpoints are hosted on `http://localhost:5001`.
     "name": "Lodwar Central",
     "regionId": 1,
     "totalRegistered": 450, // Optional
+    "type": "settlement", // Optional: village, estate, ward, sub-location, settlement, or camp
+    "leaderPhone": "+254712345678", // Optional
     "source": "RedCross Census", // Optional
     "status": "active", // Optional
     "actions": "Prepare flood walls" // Optional
@@ -124,6 +126,23 @@ All endpoints are hosted on `http://localhost:5001`.
 
 ### `DELETE /api/communities/:id`
 - **Description**: Deletes a community.
+- **Auth required**: Yes (Admin only).
+
+---
+
+## Members
+
+### `GET /api/members`
+- **Description**: Retrieves registered alert recipients. Supports optional `regionId` and `communityId` filters.
+- **Auth required**: Yes.
+
+### `POST /api/members`
+- **Description**: Registers an alert recipient.
+- **Auth required**: Yes (Admin only).
+- **Required body fields**: `fullName`, `phone`, `language`, `regionId`.
+
+### `PATCH /api/members/:id`, `DELETE /api/members/:id`
+- **Description**: Updates or removes a registered recipient.
 - **Auth required**: Yes (Admin only).
 
 ---

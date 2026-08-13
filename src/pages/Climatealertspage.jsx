@@ -225,6 +225,9 @@ export default function ClimateAlertsPage() {
   const [status, setStatus] = useState("Loading options...");
   const [optionsLoading, setOptionsLoading] = useState(true);
   const [optionsError, setOptionsError] = useState(null);
+  const [reachSummary, setReachSummary] = useState(null);
+  const [reachLoading, setReachLoading] = useState(false);
+  const [reachError, setReachError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hazardModalOpen, setHazardModalOpen] = useState(false);
   const processProgress = useSimulatedProgress();
@@ -292,10 +295,35 @@ export default function ClimateAlertsPage() {
   const selectedRegionId = selectedRegions[0]?.id;
   const selectedRegion = allRegions.find((region) => region.id === selectedRegionId);
   const selectedHazard = hazardTypes.find((hazard) => String(hazard.id) === String(hazardTypeId));
-  const reachableCount = selectedRegions.reduce(
-    (total, region) => total + Number(region.totalRegistered ?? region.registeredCount ?? 0),
-    0,
-  );
+  const reachableCount = reachSummary?.totalReachable ?? 0;
+
+  useEffect(() => {
+    let isMounted = true;
+    if (regionIds.length === 0) {
+      setReachSummary(null);
+      setReachError(null);
+      setReachLoading(false);
+      return () => { isMounted = false; };
+    }
+
+    setReachLoading(true);
+    setReachError(null);
+    api.getMemberReachSummary(regionIds)
+      .then((summary) => {
+        if (isMounted) setReachSummary(summary);
+      })
+      .catch((error) => {
+        if (isMounted) {
+          setReachSummary(null);
+          setReachError(friendlyError(error.message) ?? "Could not calculate the reach estimate.");
+        }
+      })
+      .finally(() => {
+        if (isMounted) setReachLoading(false);
+      });
+
+    return () => { isMounted = false; };
+  }, [regionIds]);
 
   function addRegion(id) {
     const numericId = Number(id);
@@ -528,14 +556,19 @@ export default function ClimateAlertsPage() {
     setStatus("Dispatching alert to selected community...");
     try {
       const alertId = await ensureAlert();
-      const result = await api.dispatchAlert(alertId, {
-        regionId: selectedRegionId,
-        dialect,
-        generateAudio: true,
-      });
-      const resultStatus = getResultValue(result, ["status"]);
-      if (resultStatus !== "dispatched") {
-        throw new Error(`Alert saved but was not marked dispatched (status: ${resultStatus ?? "unknown"}).`);
+      // A selected region represents a real dispatch target. Run one dispatch
+      // per target rather than silently sending only to the first selected
+      // region, so the live reach estimate matches the dispatch audit trail.
+      for (const region of selectedRegions) {
+        const result = await api.dispatchAlert(alertId, {
+          regionId: region.id,
+          dialect,
+          generateAudio: true,
+        });
+        const resultStatus = getResultValue(result, ["status"]);
+        if (resultStatus !== "dispatched") {
+          throw new Error(`Alert for ${region.name} was not marked dispatched (status: ${resultStatus ?? "unknown"}).`);
+        }
       }
 
       // Success is confirmed by the backend's own status field, not just the
@@ -548,7 +581,7 @@ export default function ClimateAlertsPage() {
           dispatched: true,
           alertId,
           hazardName: selectedHazard?.name ?? "Alert",
-          regionName: selectedRegion?.name ?? "the selected region",
+          regionName: selectedRegions.map((region) => region.name).join(", ") || "the selected region",
           reachableCount,
           dialect,
         },
@@ -673,6 +706,22 @@ export default function ClimateAlertsPage() {
                   </select>
                   <Plus size={16} className="text-primary" />
                 </div>
+                {regionIds.length > 0 && (
+                  <div className="mt-3 rounded-md border border-primary/25 bg-primary-soft/30 px-3.5 py-3 text-sm">
+                    {reachLoading ? (
+                      <span className="flex items-center gap-2 text-muted"><Loader2 size={15} className="animate-spin" /> Calculating estimated reach...</span>
+                    ) : reachError ? (
+                      <span className="text-danger">Reach estimate unavailable: {reachError}</span>
+                    ) : (
+                      <div>
+                        <p className="font-semibold text-primary">Estimated reach: {reachableCount.toLocaleString()} active members</p>
+                        <p className="mt-1 text-xs text-muted">
+                          {reachSummary?.byRegion?.map((region) => `${region.regionName}: ${region.reachable}`).join(" · ")} 
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="mb-6">
@@ -835,8 +884,8 @@ export default function ClimateAlertsPage() {
               <div className="mt-4 flex items-start gap-3 border border-success bg-surface p-4 text-success">
                 <MessageSquare size={18} className="mt-0.5 shrink-0" />
                 <p className="text-sm">
-                  This will reach <span className="font-bold">{reachableCount} registered numbers</span>{" "}
-                  in <span className="underline">{selectedRegion?.name ?? "the selected region"}</span>.
+                  {reachLoading ? "Calculating recipient reach..." : "This will reach "}
+                  {!reachLoading && <><span className="font-bold">{reachableCount.toLocaleString()} active members</span>{" "}across <span className="underline">{selectedRegions.length} selected region{selectedRegions.length === 1 ? "" : "s"}</span>.</>}
                 </p>
               </div>
             </Card>

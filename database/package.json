@@ -9,6 +9,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "prisma:seed": "node prisma/seed.js",
+    "prisma:seed:members": "node prisma/seed-members.js",
     "test-connection": "node src/test-connection.js"
   },
   "prisma": {

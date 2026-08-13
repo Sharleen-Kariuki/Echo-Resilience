@@ -1,4 +1,6 @@
 # Echo-Resilience
+
+For Communities/Members setup, migrations, sample data, and pull instructions, see [COMMUNITIES_HANDOFF.md](./COMMUNITIES_HANDOFF.md).
 This is a platform that allows simplification and translation of weather content and allow two way communication.
 
 ## Frontend (React + Vite)

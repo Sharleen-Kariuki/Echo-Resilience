@@ -1,3 +1,5 @@
+// The checked-in backend environment listens on 5001. Deployments can
+// override this through VITE_API_BASE_URL.
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5001";
 const AUTH_TOKEN_KEY = "echo_resilience_token";
 
@@ -12,7 +14,7 @@ export const mockRegions = [
 export const mockCommunities = [
   {
     id: 1,
-    name: "Kibera Relief Network",
+    name: "Turkana Riverside Network",
     region: { id: 1, name: "Turkana Basin" },
     totalRegistered: 3420,
     registrationDate: new Date("2023-10-12").toISOString(),
@@ -21,7 +23,7 @@ export const mockCommunities = [
   },
   {
     id: 2,
-    name: "Kisumu West Farmers Group",
+    name: "Marsabit Herders Collective",
     region: { id: 2, name: "Marsabit North" },
     totalRegistered: 1180,
     registrationDate: new Date("2023-11-05").toISOString(),
@@ -30,7 +32,7 @@ export const mockCommunities = [
   },
   {
     id: 3,
-    name: "Garissa Central Herders",
+    name: "Laisamis Women's Group",
     region: { id: 3, name: "Laisamis" },
     totalRegistered: 640,
     registrationDate: new Date("2023-11-28").toISOString(),
@@ -39,13 +41,64 @@ export const mockCommunities = [
   },
   {
     id: 4,
-    name: "Mombasa North Fisherfolk",
+    name: "Meru Highland Farmers",
     region: { id: 4, name: "Meru County" },
     totalRegistered: 2205,
     registrationDate: new Date("2023-12-01").toISOString(),
     source: "self-registered",
     status: "active",
   },
+  {
+    id: 5,
+    name: "Tharaka Relief Committee",
+    region: { id: 5, name: "Tharaka-Nithi" },
+    totalRegistered: 890,
+    registrationDate: new Date("2024-01-15").toISOString(),
+    source: "admin-added",
+    status: "active",
+  },
+  {
+    id: 6,
+    name: "Turkana Fisherfolk Alliance",
+    region: { id: 1, name: "Turkana Basin" },
+    totalRegistered: 512,
+    registrationDate: new Date("2024-02-08").toISOString(),
+    source: "self-registered",
+    status: "active",
+  },
+  {
+    id: 7,
+    name: "Marsabit Youth Network",
+    region: { id: 2, name: "Marsabit North" },
+    totalRegistered: 275,
+    registrationDate: new Date("2024-03-21").toISOString(),
+    source: "self-registered",
+    status: "opted-out",
+  },
+  {
+    id: 8,
+    name: "Meru Market Traders",
+    region: { id: 4, name: "Meru County" },
+    totalRegistered: 1340,
+    registrationDate: new Date("2024-04-10").toISOString(),
+    source: "admin-added",
+    status: "active",
+  },
+];
+
+// Development-only recipient records. These are deliberately distinct from
+// live registrations and are used only when the Members API is unavailable.
+export const mockMembers = [
+  { id: "mock-member-1", fullName: "Amina Ekiru", phone: "+254712300001", language: "Turkana", locality: "Kanamkemer", regionId: 1, communityId: 1, communityName: "Turkana Riverside Network", source: "admin-added", status: "active" },
+  { id: "mock-member-2", fullName: "Samuel Lomuria", phone: "+254712300002", language: "Turkana", locality: "Lodwar Central", regionId: 1, communityId: 6, communityName: "Turkana Fisherfolk Alliance", source: "self-registered", status: "active" },
+  { id: "mock-member-3", fullName: "Hawa Galgalo", phone: "+254712300003", language: "Oromo", locality: "Sololo", regionId: 2, communityId: 2, communityName: "Marsabit Herders Collective", source: "admin-added", status: "active" },
+  { id: "mock-member-4", fullName: "Abdi Jillo", phone: "+254712300004", language: "Oromo", locality: "Marsabit Town", regionId: 2, communityId: 7, communityName: "Marsabit Youth Network", source: "self-registered", status: "opted-out" },
+  { id: "mock-member-5", fullName: "Fatuma Diba", phone: "+254712300005", language: "Somali", locality: "Laisamis", regionId: 3, communityId: 3, communityName: "Laisamis Women's Group", source: "self-registered", status: "opted-out" },
+  { id: "mock-member-6", fullName: "Hassan Wario", phone: "+254712300006", language: "Somali", locality: "Loglogo", regionId: 3, communityId: 3, communityName: "Laisamis Women's Group", source: "admin-added", status: "active" },
+  { id: "mock-member-7", fullName: "Martha Kendi", phone: "+254712300007", language: "Swahili", locality: "Imenti North", regionId: 4, communityId: 4, communityName: "Meru Highland Farmers", source: "self-registered", status: "active" },
+  { id: "mock-member-8", fullName: "Peter Muriuki", phone: "+254712300008", language: "Swahili", locality: "Meru Town", regionId: 4, communityId: 8, communityName: "Meru Market Traders", source: "admin-added", status: "active" },
+  { id: "mock-member-9", fullName: "Joyce Muthoni", phone: "+254712300009", language: "Amharic", locality: "Chuka", regionId: 5, communityId: 5, communityName: "Tharaka Relief Committee", source: "admin-added", status: "active" },
+  { id: "mock-member-10", fullName: "Daniel Mwangi", phone: "+254712300010", language: "Amharic", locality: "Maara", regionId: 5, communityId: 5, communityName: "Tharaka Relief Committee", source: "self-registered", status: "active" },
 ];
 
 export const mockHazardTypes = [
@@ -283,6 +336,12 @@ export const api = {
   createCommunity: (body) => request("/api/communities", { method: "POST", body }),
   updateCommunity: (id, body) => request(`/api/communities/${id}`, { method: "PATCH", body }),
   deleteCommunity: (id) => request(`/api/communities/${id}`, { method: "DELETE" }),
+
+  getMembers: (query) => withFallback(async () => unwrapList(await request("/api/members", { query }), ["items", "data", "results", "members"]), mockMembers),
+  getMemberReachSummary: (regionIds) => request("/api/members/summary", { query: { regionIds: regionIds.join(",") } }),
+  createMember: (body) => request("/api/members", { method: "POST", body }),
+  updateMember: (id, body) => request(`/api/members/${id}`, { method: "PATCH", body }),
+  deleteMember: (id) => request(`/api/members/${id}`, { method: "DELETE" }),
 
   getAlerts: (query) =>
     withFallback(async () => unwrapList(await request("/api/alerts", { query })), mockAlerts),

@@ -19,7 +19,7 @@ router.get('/', authenticate, async (req, res) => {
 
 // POST /api/communities  (admin only)
 router.post('/', authenticate, requireAdmin, async (req, res) => {
-  const { name, regionId, totalRegistered, source, status, actions } = req.body;
+  const { name, regionId, totalRegistered, type, leaderPhone, source, status, actions } = req.body;
 
   if (!name || !regionId) {
     return res.status(400).json({ error: 'name and regionId are required' });
@@ -30,6 +30,8 @@ router.post('/', authenticate, requireAdmin, async (req, res) => {
       name,
       regionId: Number(regionId),
       totalRegistered: totalRegistered ?? 0,
+      type,
+      leaderPhone,
       source,
       status: status ?? 'active',
       actions,
@@ -42,11 +44,11 @@ router.post('/', authenticate, requireAdmin, async (req, res) => {
 
 // PATCH /api/communities/:id  (admin only)
 router.patch('/:id', authenticate, requireAdmin, async (req, res) => {
-  const { name, totalRegistered, source, status, actions } = req.body;
+  const { name, totalRegistered, type, leaderPhone, source, status, actions } = req.body;
 
   const community = await prisma.community.update({
     where: { id: Number(req.params.id) },
-    data: { name, totalRegistered, source, status, actions },
+    data: { name, totalRegistered, type, leaderPhone, source, status, actions },
     include: { region: { select: { id: true, name: true } } },
   });
 

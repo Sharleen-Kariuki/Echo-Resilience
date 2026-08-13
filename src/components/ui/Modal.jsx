@@ -6,12 +6,12 @@ export default function Modal({ open, onClose, title, description, children }) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-ink/40 p-4">
+    <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-ink/40 p-4">
       <div
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="w-full max-w-lg rounded-card border border-line bg-surface p-6 shadow-xl"
+        className="flex max-h-[calc(100dvh-2rem)] w-full max-w-lg flex-col overflow-hidden rounded-card border border-line bg-surface p-6 shadow-xl"
       >
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
@@ -26,7 +26,7 @@ export default function Modal({ open, onClose, title, description, children }) {
             <X size={18} />
           </button>
         </div>
-        {children}
+        <div className="min-h-0 overflow-y-auto pr-1">{children}</div>
       </div>
     </div>
   );

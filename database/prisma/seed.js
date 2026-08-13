@@ -31,6 +31,7 @@ async function clearExisting() {
   // Delete in FK-safe order (children before parents).
   await prisma.feedbackLog.deleteMany();
   await prisma.alertHistory.deleteMany();
+  await prisma.member.deleteMany();
   await prisma.alertRegion.deleteMany();
   await prisma.alert.deleteMany();
   await prisma.community.deleteMany();
@@ -66,25 +67,56 @@ async function seedHazardTypes() {
 
 async function seedCommunities(regions) {
   const rows = [
-    { name: 'Turkana Riverside Network', region: 'Turkana Basin', totalRegistered: 3420, source: 'self-registered', status: 'active' },
-    { name: 'Marsabit Herders Collective', region: 'Marsabit North', totalRegistered: 1180, source: 'admin-added', status: 'active' },
-    { name: "Laisamis Women's Group", region: 'Laisamis', totalRegistered: 640, source: 'self-registered', status: 'opted-out' },
-    { name: 'Meru Highland Farmers', region: 'Meru County', totalRegistered: 2205, source: 'self-registered', status: 'active' },
-    { name: 'Tharaka Relief Committee', region: 'Tharaka-Nithi', totalRegistered: 890, source: 'admin-added', status: 'active' },
-    { name: 'Turkana Fisherfolk Alliance', region: 'Turkana Basin', totalRegistered: 512, source: 'self-registered', status: 'active' },
-    { name: 'Marsabit Youth Network', region: 'Marsabit North', totalRegistered: 275, source: 'self-registered', status: 'opted-out' },
-    { name: 'Meru Market Traders', region: 'Meru County', totalRegistered: 1340, source: 'admin-added', status: 'active' },
+    { name: 'Turkana Riverside Network', region: 'Turkana Basin', type: 'settlement', leaderPhone: '+254711200001', totalRegistered: 3420, source: 'self-registered', status: 'active' },
+    { name: 'Lodwar Pastoralist Forum', region: 'Turkana Basin', type: 'village', leaderPhone: '+254711200002', totalRegistered: 1850, source: 'admin-added', status: 'active' },
+    { name: 'Marsabit Herders Collective', region: 'Marsabit North', type: 'settlement', leaderPhone: '+254711200003', totalRegistered: 1180, source: 'admin-added', status: 'active' },
+    { name: 'Sololo Women Water Committee', region: 'Marsabit North', type: 'ward', leaderPhone: '+254711200004', totalRegistered: 760, source: 'self-registered', status: 'active' },
+    { name: "Laisamis Women's Group", region: 'Laisamis', type: 'village', leaderPhone: '+254711200005', totalRegistered: 640, source: 'self-registered', status: 'opted-out' },
+    { name: 'Loglogo Youth Network', region: 'Laisamis', type: 'settlement', leaderPhone: '+254711200006', totalRegistered: 430, source: 'admin-added', status: 'active' },
+    { name: 'Meru Highland Farmers', region: 'Meru County', type: 'ward', leaderPhone: '+254711200007', totalRegistered: 2205, source: 'self-registered', status: 'active' },
+    { name: 'Meru Market Traders', region: 'Meru County', type: 'estate', leaderPhone: '+254711200008', totalRegistered: 1340, source: 'admin-added', status: 'active' },
+    { name: 'Tharaka Relief Committee', region: 'Tharaka-Nithi', type: 'sub-location', leaderPhone: '+254711200009', totalRegistered: 890, source: 'admin-added', status: 'active' },
+    { name: 'Chuka Hills Farmers Association', region: 'Tharaka-Nithi', type: 'village', leaderPhone: '+254711200010', totalRegistered: 975, source: 'self-registered', status: 'active' },
   ];
 
+  const communities = {};
   for (const row of rows) {
-    await prisma.community.create({
+    communities[row.name] = await prisma.community.create({
       data: {
         name: row.name,
         regionId: regions[row.region].id,
         totalRegistered: row.totalRegistered,
+        type: row.type,
+        leaderPhone: row.leaderPhone,
         source: row.source,
         status: row.status,
         registrationDate: daysAgo(30 + Math.floor(Math.random() * 200)),
+      },
+    });
+  }
+  return communities;
+}
+
+async function seedMembers(regions, communities) {
+  const rows = [
+    { fullName: 'Amina Ekiru', phone: '+254712300001', language: 'Turkana', locality: 'Kanamkemer', region: 'Turkana Basin', community: 'Turkana Riverside Network' },
+    { fullName: 'Samuel Lomuria', phone: '+254712300002', language: 'Turkana', locality: 'Lodwar Central', region: 'Turkana Basin', community: 'Lodwar Pastoralist Forum' },
+    { fullName: 'Hawa Galgalo', phone: '+254712300003', language: 'Oromo', locality: 'Sololo', region: 'Marsabit North', community: 'Sololo Women Water Committee' },
+    { fullName: 'Abdi Jillo', phone: '+254712300004', language: 'Oromo', locality: 'Marsabit Town', region: 'Marsabit North', community: 'Marsabit Herders Collective' },
+    { fullName: 'Fatuma Diba', phone: '+254712300005', language: 'Somali', locality: 'Laisamis', region: 'Laisamis', community: "Laisamis Women's Group", status: 'opted-out' },
+    { fullName: 'Martha Kendi', phone: '+254712300006', language: 'Swahili', locality: 'Imenti North', region: 'Meru County', community: 'Meru Highland Farmers' },
+    { fullName: 'Peter Muriuki', phone: '+254712300007', language: 'Swahili', locality: 'Meru Town', region: 'Meru County', community: 'Meru Market Traders' },
+    { fullName: 'Joyce Muthoni', phone: '+254712300008', language: 'Amharic', locality: 'Chuka', region: 'Tharaka-Nithi', community: 'Chuka Hills Farmers Association' },
+  ];
+  for (const row of rows) {
+    const { region, community, ...member } = row;
+    await prisma.member.create({
+      data: {
+        ...member,
+        regionId: regions[region].id,
+        communityId: communities[community].id,
+        source: 'admin-added',
+        status: member.status ?? 'active',
       },
     });
   }
@@ -309,7 +341,10 @@ async function main() {
   const hazards = await seedHazardTypes();
 
   console.log('Seeding communities...');
-  await seedCommunities(regions);
+  const communities = await seedCommunities(regions);
+
+  console.log('Seeding members...');
+  await seedMembers(regions, communities);
 
   console.log('Seeding alerts...');
   const alerts = await seedAlerts(hazards, regions, users);
