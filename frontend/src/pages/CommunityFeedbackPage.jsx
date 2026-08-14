@@ -436,7 +436,7 @@ export default function CommunityFeedbackPage() {
             {usingMock ? "Showing sample data until live records are available." : status}
           </p>
         </div>
-        <span className="inline-flex items-center gap-2 border border-success/25 bg-success-soft px-4 py-2 text-sm font-semibold text-success">
+        <span className="inline-flex items-center gap-2 border border-success bg-surface px-4 py-2 text-sm font-semibold text-success">
           <span className="h-2 w-2 rounded-full bg-success" />
           Live Reports: <span className="font-bold">{liveReports} Today</span>
         </span>

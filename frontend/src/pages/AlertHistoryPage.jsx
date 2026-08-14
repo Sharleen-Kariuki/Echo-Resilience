@@ -349,7 +349,7 @@ export default function AlertHistoryPage() {
       topBar={<TopBar title="Alert History" searchPlaceholder="Search alert logs..." actions={actions} />}
     >
       {dispatchBanner && (
-        <div className="mb-5 flex items-start gap-3 border border-success/25 bg-success-soft p-4 text-success">
+        <div className="mb-5 flex items-start gap-3 border border-success bg-surface p-4 text-success">
           <CheckCircle2 size={18} className="mt-0.5 shrink-0" />
           <p className="flex-1 text-sm">
             <span className="font-bold">{dispatchBanner.hazardName}</span> dispatched in{" "}
