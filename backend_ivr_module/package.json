@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Node.js + TypeScript backend IVR module for EchoResilience dashboard.",
   "main": "dist/server.js",
+  "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
